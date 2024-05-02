@@ -1,0 +1,8 @@
+#!/bin/bash
+host=`hostname`
+dir=nv-go
+if [[ "$host" == "pi4" ]]; then
+	rsync -avz --exclude-from sync-exclude --delete sparta.local:~/dev/$dir/ ~/dev/$dir/
+else
+	rsync -avz --exclude-from sync-exclude --delete ~/dev/$dir/ pi4:~/dev/$dir/
+fi

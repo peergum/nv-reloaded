@@ -1,0 +1,4 @@
+github.com/peergum/IT8951-go v0.0.1 h1:/GmQmfFARN8emvpKuNWeT602e88ZOsQH2GioI+ILvY0=
+github.com/peergum/IT8951-go v0.0.1/go.mod h1:bSJT7e3lGJMtupzPaD3RLkXDCyPZzdt+Lriu7HIER30=
+github.com/peergum/go-rpio/v4 v4.0.0-20240502133125-d1c231628b14 h1:YnAA969Vg18kqrEpGBdPPcoO4VsofRo8LJqlsMSpK40=
+github.com/peergum/go-rpio/v4 v4.0.0-20240502133125-d1c231628b14/go.mod h1:jg4//+AECUsdqHxYf35IUP0GdHTfuRwrmLaHHmVKyDQ=

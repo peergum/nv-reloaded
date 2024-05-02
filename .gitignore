@@ -19,3 +19,11 @@
 
 # Go workspace file
 go.work
+
+display/Fonts
+display/fontconvert/ImportedFonts
+bcm2711
+bcm2835_C_files
+
+.idea
+sync
