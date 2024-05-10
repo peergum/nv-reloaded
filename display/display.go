@@ -59,7 +59,7 @@ func InitScreen() {
 		},
 		windows: make([]Window, 3),
 	}
-	ShowLogo()
+	//ShowLogo()
 }
 
 func ShowLogo() {

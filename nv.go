@@ -24,11 +24,14 @@ import (
 	"log"
 	"nv/content"
 	"nv/display"
+	"nv/display/fonts-go"
 	"nv/input"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -39,80 +42,83 @@ const (
 )
 
 var (
-	shouldTerminate bool           // program should exit
-	signalChannel   chan os.Signal = make(chan os.Signal, 1)
-	debug           bool
-	epd             bool
-	Rotation        it8951.Rotate = it8951.Rotate0
-	photoBorder     int           = 10
-	statsWidth                    = defaultStatsWidth
-	statsHeight                   = defaultStatsHeight
-	statsMargin                   = defaultStatsMargin
-	functionHeight                = 100
+	shouldTerminate bool // program should exit
+	shouldPowerOff  bool
+	shouldReboot    bool
+
+	signalChannel  chan os.Signal = make(chan os.Signal, 1)
+	debug          bool
+	epd            bool
+	Rotation       it8951.Rotate = it8951.Rotate0
+	photoBorder    int           = 10
+	statsWidth                   = defaultStatsWidth
+	statsHeight                  = defaultStatsHeight
+	statsMargin                  = defaultStatsMargin
+	functionHeight               = 100
 
 	fnWindowToggle    = false
 	statsWindowToggle = false
 
 	F1 = content.FunctionKey{
-		content.None:  {"Help", fnDoNothing},
-		content.Shift: {"Shortcuts", fnDoNothing},
+		input.None:  {"Help", fnDoNothing},
+		input.Shift: {"Shortcuts", fnDoNothing},
 	}
 	F2 = content.FunctionKey{
-		content.None: {"New", fnNewDocument},
+		input.None: {"New", fnNewDocument},
 	}
 	F3 = content.FunctionKey{
-		content.None:  {"Load", fnDoNothing},
-		content.Shift: {"Save", fnDoNothing},
-		content.Ctrl:  {"Save As", fnDoNothing},
-		content.Alt:   {"Reload", fnDoNothing},
+		input.None:  {"Load", fnLoadDocument},
+		input.Shift: {"Save", fnDoNothing},
+		input.Ctrl:  {"Save As", fnDoNothing},
+		input.Alt:   {"Reload", fnDoNothing},
 	}
 	F4 = content.FunctionKey{
-		content.None: {"Close", fnDoNothing},
-		content.Alt:  {"Exit", fnDoNothing},
+		input.None: {"Close", fnDoNothing},
+		input.Alt:  {"Exit", fnDoNothing},
 	}
 	F5 = content.FunctionKey{
-		content.None:  {"Top", fnDoNothing},
-		content.Shift: {"Bottom", fnDoNothing},
+		input.None:  {"Top", fnDoNothing},
+		input.Shift: {"Bottom", fnDoNothing},
 	}
 	F6 = content.FunctionKey{
-		content.None: {"Setup Wifi", fnDoNothing},
+		input.None: {"Setup Wifi", fnDoNothing},
 	}
 	F7 = content.FunctionKey{
-		content.None:                 {"Start Block", fnDoNothing},
-		content.Shift:                {"End Block", fnDoNothing},
-		content.Ctrl:                 {"Cut Block", fnDoNothing},
-		content.Ctrl | content.Shift: {"Ins Block", fnDoNothing},
-		content.Alt:                  {"Del Block", fnDoNothing},
+		input.None:               {"Start Block", fnDoNothing},
+		input.Shift:              {"End Block", fnDoNothing},
+		input.Ctrl:               {"Cut Block", fnDoNothing},
+		input.Ctrl | input.Shift: {"Ins Block", fnDoNothing},
+		input.Alt:                {"Del Block", fnDoNothing},
 	}
 	F8 = content.FunctionKey{
-		content.None:  {"Cpy Paragr.", fnDoNothing},
-		content.Shift: {"Ins Paragr.", fnDoNothing},
-		content.Ctrl:  {"Cut Paragr.", fnDoNothing},
-		content.Alt:   {"Del Paragr.", fnDoNothing},
+		input.None:  {"Cpy Paragr.", fnDoNothing},
+		input.Shift: {"Ins Paragr.", fnDoNothing},
+		input.Ctrl:  {"Cut Paragr.", fnDoNothing},
+		input.Alt:   {"Del Paragr.", fnDoNothing},
 	}
 	F9 = content.FunctionKey{
-		content.None: {"Ins Picture", fnDoNothing},
-		content.Ctrl: {"Cut Picture", fnDoNothing},
-		content.Alt:  {"Del Picture", fnDoNothing},
+		input.None: {"Ins Picture", fnDoNothing},
+		input.Ctrl: {"Cut Picture", fnDoNothing},
+		input.Alt:  {"Del Picture", fnDoNothing},
 	}
 	F10 = content.FunctionKey{
-		content.None:  {"E-mail", fnDoNothing},
-		content.Shift: {"G-Drive", fnDoNothing},
-		content.Ctrl:  {"Dropbox", fnDoNothing},
-		content.Alt:   {"PDF", fnDoNothing},
+		input.None:  {"E-mail", fnDoNothing},
+		input.Shift: {"G-Drive", fnDoNothing},
+		input.Ctrl:  {"Dropbox", fnDoNothing},
+		input.Alt:   {"PDF", fnDoNothing},
 	}
 	F11 = content.FunctionKey{
-		content.None: {"Stats", fnToggleStats},
+		input.None: {"Stats", fnToggleStats},
 	}
 	F12 = content.FunctionKey{
-		content.None:  {"Sleep", fnDoNothing},
-		content.Shift: {"Reboot", fnDoNothing},
-		content.Ctrl:  {"Shutdown", fnDoNothing},
-		content.Shift | content.Ctrl | content.Alt: {"Factory Reset", fnDoNothing},
+		input.None:                           {"Sleep", fnDoNothing},
+		input.Shift:                          {"Reboot", fnReboot},
+		input.Ctrl:                           {"Shutdown", fnShutdown},
+		input.Shift | input.Ctrl | input.Alt: {"Factory Reset", fnDoNothing},
 	}
 
 	functions = content.FnPanel{
-		0: F1, 1: F2, 2: F3, 3: F4, 4: F5, 5: F6, 6: F7, 7: F8, 8: F9, 9: F10, 10: F11, 11: F12,
+		FunctionKeys: content.FunctionKeys{0: F1, 1: F2, 2: F3, 3: F4, 4: F5, 5: F6, 6: F7, 7: F8, 8: F9, 9: F10, 10: F11, 11: F12},
 	}
 
 	mainWindow  *display.Window
@@ -121,7 +127,9 @@ var (
 	stats       *content.Stats
 	statsWindow *display.Window
 
-	metaKey uint8
+	metaKey uint16
+
+	//keyboards []*input.Keyboard
 )
 
 func init() {
@@ -149,135 +157,109 @@ func main() {
 
 	Debug("Starting serious business")
 
-	keyboards, err := input.Search()
-	if err != nil {
-		panic(err)
-	}
+	// start searching/updating keyboards
+	keyboardChannel := input.KeyboardChannel()
 
 	keyChannel := input.KeyChannel()
-	eventChannel := make(chan string, 10)
-
-	for i := range keyboards {
-		Debug("%s", keyboards[i].Name)
-		go input.ReadKeyboard(keyboards[i], eventChannel)
-	}
+	eventChannel := make(chan bool, 10)
+	go input.Search(eventChannel)
 
 	display.InitDisplay()
 	display.InitScreen()
 
 	mainWindow = display.Screen.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
-		Title:       "Welcome to NV-Reloaded",
+		Title:       "NV Starting...",
 		TitleBar:    true,
 		Border:      2,
 		BgColor:     display.White,
 		BorderColor: display.Black,
 	})
 
-	//currentDoc = &content.Document{
-	//	Filename: "abc.txt",
-	//	Title:    "My ABC",
-	//}
-	//
-	//mainWindow.SetContent(currentDoc, 10, 10).Load().Update()
+	welcome := &content.Welcome{}
+	mainWindow.SetContent(welcome, 150, 150).Load().Update()
 
-	//statsWindow.Hide()
-	//time.Sleep(time.Duration(1) * time.Second)
-	//fnWindow.Hide()
-	//time.Sleep(time.Duration(1) * time.Second)
-	//statsWindow.Show()
-
+	//fnNewDocument()
 	shouldTerminate = false
 
 mainLoop:
 	for !shouldTerminate {
 		select {
+		case kbd := <-keyboardChannel:
+			if kbd == nil {
+				panic("Keyboard search failed")
+			}
+			Debug("Keyboard %s added", kbd.Name)
 		case event := <-keyChannel:
 			//Debug("Received event: %v", event)
 			if event.TypeName == "EV_KEY" && event.KeyName == "KEY_ESC" && event.Value == 1 {
 				Debug("FN Toggle")
 				fnToggleFnWindow()
-			} else if event.TypeName == "EV_KEY" && strings.Contains(event.KeyName, "KEY_F") && event.Value == 1 {
+			} else if event.TypeName == "EV_KEY" && event.SpecialKey {
+				newMetaKey := input.Metakey()
+				if fnWindowToggle && metaKey != newMetaKey {
+					functions.SetMeta(newMetaKey)
+					fnWindow.SetUpdated().Load().Update()
+				}
+				metaKey = newMetaKey
+			} else if event.TypeName == "EV_KEY" && strings.Contains(event.KeyName, "KEY_F") && len(event.KeyName) > 5 && event.Value == 1 {
 				fnNum, err := strconv.Atoi(strings.Replace(event.KeyName, "KEY_F", "", 1))
 				Debug("Fn%d", fnNum)
 				if err == nil && fnNum > 0 && fnNum < 13 {
-					functions[fnNum-1][metaKey].Command()
+					functions.FunctionKeys[fnNum-1][metaKey].Command()
 				}
+			} else if mainWindow.GetContentType() == "document" && event.TypeName == "EV_KEY" && event.Value > 0 && currentDoc.Ready {
+				currentDoc.Editor(event)
 			}
+
 		default:
 			if shouldTerminate {
 				break mainLoop
 			}
 		}
+		if mainWindow.GetContentType() == "document" && currentDoc.Ready {
+			currentDoc.ToggleCursor()
+		}
 	}
 	Debug("We're done")
-	eventChannel <- "done"
+	eventChannel <- true
 
-}
+	win := display.Screen.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
+		//Title:       "NV PowerOff",
+		TitleBar:    false,
+		Border:      0,
+		BgColor:     display.White,
+		BorderColor: display.Black,
+	})
+	font := &fonts.IsoMetrixNF_Bold30pt8b
+	if shouldPowerOff {
+		win.SetTextArea(font, 0, 0).
+			WriteCenteredIn(0, 0, win.W, win.H, "Powering Off...", display.Black, display.White).
+			Update()
 
-func fnDoNothing() {}
+		time.Sleep(2000 * time.Millisecond)
+		win.Fill(0, display.White, display.Black).
+			Update()
+		display.ShowLogo()
+		exec.Command("shutdown", "-P", "now").Run()
+	} else if shouldReboot {
+		win.SetTextArea(font, 0, 0).
+			WriteCenteredIn(0, 0, win.W, win.H, "Rebooting...", display.Black, display.White).
+			Update()
 
-func fnToggleFnWindow() {
-	fnWindowToggle = !fnWindowToggle
-	if fnWindowToggle {
-		if fnWindow == nil {
-			fnWindow = mainWindow.NewWindow(0, mainWindow.InnerH-functionHeight, mainWindow.W, functionHeight, display.WindowOptions{
-				Title:       "Functions",
-				TitleBar:    false,
-				Border:      1,
-				BorderColor: display.Black,
-				BgColor:     display.White,
-			})
-			functions.SetMeta(content.None)
-			fnWindow.SetContent(&functions, 0, 0).
-				Load().
-				Update()
-		} else {
-			fnWindow.Show()
-		}
+		time.Sleep(2000 * time.Millisecond)
+		win.Fill(0, display.White, display.Black).
+			Update()
+		display.ShowLogo()
+		exec.Command("shutdown", "-r", "now").Run()
 	} else {
-		fnWindow.Hide()
+		win.SetTextArea(font, 0, 0).
+			WriteCenteredIn(0, 0, win.W, win.H, "Terminating", display.Black, display.White).
+			Update()
+
+		time.Sleep(500 * time.Millisecond)
+		win.Fill(0, display.White, display.Black).
+			Update()
 	}
-}
-
-func fnToggleStats() {
-	statsWindowToggle = !statsWindowToggle
-
-	if statsWindowToggle && mainWindow.View != nil {
-		if statsWindow == nil {
-			stats = &content.Stats{
-				Document: currentDoc,
-			}
-
-			x := (mainWindow.InnerW - statsWidth) / 2
-			y := (mainWindow.InnerH - statsHeight) / 2
-			statsWindow = mainWindow.NewWindow(x, y, statsWidth, statsHeight, display.WindowOptions{
-				Title:       "Stats",
-				TitleBar:    true,
-				Border:      5,
-				BorderColor: display.Black,
-				BgColor:     display.Gray14,
-			})
-
-			statsWindow.SetContent(stats, 10, 10).
-				Load().
-				Update()
-
-		} else {
-			statsWindow.Show()
-		}
-	} else {
-		statsWindow.Hide()
-	}
-}
-
-func fnNewDocument() {
-	currentDoc = &content.Document{
-		Filename: "",
-		Title:    "New Document",
-	}
-
-	mainWindow.SetContent(currentDoc, 10, 10).Load().Update()
-
 }
 
 func terminate() {

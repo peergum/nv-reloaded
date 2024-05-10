@@ -25,10 +25,11 @@ import (
 
 type Content interface {
 	GetTitle() string
-	Load()
+	Load(*View)
 	Refresh()
 	Save()
-	Print(*View)
+	Print()
+	Type() string
 }
 
 type WindowOptions struct {
@@ -55,7 +56,7 @@ type ScreenView struct {
 }
 
 const (
-	titleBorder   = 1
+	titleBorder   = 2
 	titleHeight   = 48
 	contentBorder = 1
 )
@@ -120,7 +121,7 @@ func (window *Window) Show() {
 		}
 		it8951.WaitForDisplayReady()
 		if window.content != nil {
-			window.content.Print(window.View)
+			window.content.Print()
 			window.Update()
 		}
 	}
@@ -174,8 +175,12 @@ func (window *Window) SetContent(content Content, mx, my int) *Window {
 	window.Title = content.GetTitle()
 	window.RefreshTitleBar()
 	window.View.SetTextArea(&fonts.SF_Pro_Text_Regular20pt8b, mx, my).
-		SetCursor(window.View.InnerX+10, window.InnerH-20)
+		SetCursor(window.View.InnerX+window.View.TextArea.MarginX, window.View.InnerY+window.View.TextArea.MarginY)
 	return window
+}
+
+func (window *Window) GetContentType() string {
+	return window.content.Type()
 }
 
 //func (window Window) SetTitle(title string) Window {
@@ -189,9 +194,14 @@ func (window *Window) SetContent(content Content, mx, my int) *Window {
 func (window *Window) Load() *Window {
 	Debug("Load Window")
 	if window.content != nil {
-		window.content.Load()
+		window.content.Load(window.View)
 		//window.updated = true
-		window.content.Print(window.View)
+		window.content.Print()
 	}
+	return window
+}
+
+func (window *Window) SetUpdated() *Window {
+	window.updated = true
 	return window
 }

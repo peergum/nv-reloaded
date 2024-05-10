@@ -24,9 +24,14 @@ import (
 	"nv/display/fonts-go"
 )
 
-type FnPanel []FunctionKey
+type FnPanel struct {
+	FunctionKeys
+	view *display.View
+}
 
-type FunctionKey map[uint8]*FunctionDefinition
+type FunctionKeys []FunctionKey
+
+type FunctionKey map[uint16]*FunctionDefinition
 
 type FunctionDefinition struct {
 	Label   string
@@ -35,30 +40,27 @@ type FunctionDefinition struct {
 
 type fnCommand func()
 
-const (
-	Shift uint8 = 1 << iota
-	Ctrl
-	Alt
-	Cmd
-
-	None uint8 = 0
-)
-
 var (
 	numFnKeys    = 12
 	numRows      = 2
 	panelBgColor = display.Gray8
-	metaKeys     uint8
+	metaKeys     uint16
 )
 
 func init() {
 }
 
-func (fnPanel *FnPanel) SetMeta(keys uint8) {
+func (fnPanel *FnPanel) Type() string {
+	return "functions"
+}
+
+func (fnPanel *FnPanel) SetMeta(keys uint16) {
 	metaKeys = keys
 }
 
-func (fnPanel *FnPanel) Load() {}
+func (fnPanel *FnPanel) Load(view *display.View) {
+	fnPanel.view = view
+}
 
 func (fnPanel *FnPanel) Refresh() {
 }
@@ -70,26 +72,27 @@ func (fnPanel *FnPanel) GetTitle() string {
 	return "Functions"
 }
 
-func (fnPanel *FnPanel) Print(view *display.View) {
+func (fnPanel *FnPanel) Print() {
+	view := fnPanel.view
 	view.TextArea.MarginX = 0
 	view.TextArea.MarginY = 0
-	if len(*fnPanel) == 0 {
+	if len(fnPanel.FunctionKeys) == 0 {
 		return
 	}
 	// split keys on 2 rows
 	numCols := numFnKeys / numRows
 	fnWidth := view.InnerW / numCols
 	fnHeight := view.InnerH / numRows
-	var xb, yb, wb, hb int
 	for i := 0; i < numFnKeys; i++ {
 		view.FillRectangle((i%numCols)*fnWidth, (i/numCols)*fnHeight, fnWidth, fnHeight, 3, panelBgColor, display.White)
 		view.FillRectangle((i%numCols)*fnWidth+4, (i/numCols)*fnHeight+4, fnHeight, fnHeight-8, 1, display.White, display.Black)
 		view.TextArea.SetFont(&fonts.Montserrat_Medium12pt8b)
 		view.WriteCenteredIn((i%numCols)*fnWidth+4, (i/numCols)*fnHeight+4, fnHeight, fnHeight-8, fmt.Sprintf("F%d", i+1), display.Black, display.Transparent)
-		fn := (*fnPanel)[i]
+		fn := (fnPanel.FunctionKeys)[i]
 		if fn != nil && fn[metaKeys] != nil {
 			view.TextArea.SetFont(&fonts.Montserrat_Medium16pt8b)
-			view.GetTextBounds(fn[metaKeys].Label, 0, 0, &xb, &yb, &wb, &hb)
+			x0, y0 := 0, 0
+			_, _, wb, _ := view.GetTextBounds(fn[metaKeys].Label, &x0, &y0)
 			Debug("Fn %d, meta: %d -> %v", i+1, metaKeys, fn[metaKeys])
 			if wb >= fnWidth-fnHeight-10 {
 				view.TextArea.SetFont(&fonts.Montserrat_Medium12pt8b)

@@ -1,4 +1,8 @@
-github.com/peergum/IT8951-go v0.0.1 h1:/GmQmfFARN8emvpKuNWeT602e88ZOsQH2GioI+ILvY0=
-github.com/peergum/IT8951-go v0.0.1/go.mod h1:bSJT7e3lGJMtupzPaD3RLkXDCyPZzdt+Lriu7HIER30=
+github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
+github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
+github.com/peergum/IT8951-go v0.0.2 h1:k6gpr4qQaqMiLzhWn8TXjuIny3kQTKsbv3kis5fetoE=
+github.com/peergum/IT8951-go v0.0.2/go.mod h1:bSJT7e3lGJMtupzPaD3RLkXDCyPZzdt+Lriu7HIER30=
 github.com/peergum/go-rpio/v4 v4.0.0-20240502133125-d1c231628b14 h1:YnAA969Vg18kqrEpGBdPPcoO4VsofRo8LJqlsMSpK40=
 github.com/peergum/go-rpio/v4 v4.0.0-20240502133125-d1c231628b14/go.mod h1:jg4//+AECUsdqHxYf35IUP0GdHTfuRwrmLaHHmVKyDQ=
+golang.org/x/sys v0.4.0 h1:Zr2JFtRQNX3BCZ8YtxRE9hNJYC8J6I1MVbMg6owUp18=
+golang.org/x/sys v0.4.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=

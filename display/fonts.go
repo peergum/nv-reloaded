@@ -27,10 +27,10 @@ import (
 type TextArea struct {
 	MarginX  int            // margin X
 	MarginY  int            // margin Y
-	currentW int            // Display width as modified by current rotation
-	currentH int            // Display height as modified by current rotation
-	cX       int            // x location to start writing text
-	cY       int            // y location to start writing text
+	CurrentW int            // Display width as modified by current rotation
+	CurrentH int            // Display height as modified by current rotation
+	CX       int            // x location to start writing text
+	CY       int            // y location to start writing text
 	fgColor  uint16         // 16-bit background color for text
 	BgColor  uint16         // 16-bit text color for text
 	sX       int            // Desired magnification in X-axis of text to print()
@@ -64,10 +64,10 @@ func (view *View) SetTextArea(font *fonts.GfxFont, mX, mY int) *View {
 	area := TextArea{
 		MarginX:  mX,
 		MarginY:  mY,
-		currentW: view.InnerW - 2*mX,
-		currentH: view.InnerH - 2*mY,
-		cX:       0,
-		cY:       0,
+		CurrentW: view.InnerW - 2*mX,
+		CurrentH: view.InnerH - 2*mY,
+		CX:       0,
+		CY:       0,
 		sX:       1,
 		sY:       1,
 		Wrap:     true,
@@ -82,9 +82,15 @@ func (view *View) SetTextArea(font *fonts.GfxFont, mX, mY int) *View {
 }
 
 func (view *View) SetCursor(x, y int) *View {
-	view.TextArea.cX = x
-	view.TextArea.cY = y
+	view.TextArea.CX = x // - view.TextArea.MarginX
+	view.TextArea.CY = y // - view.TextArea.MarginY
 	return view
+}
+
+func (view *View) GetCursor() (x, y int) {
+	x = view.TextArea.CX // + view.TextArea.MarginX
+	y = view.TextArea.CY // + view.TextArea.MarginY
+	return x, y
 }
 
 /**************************************************************************/
@@ -100,14 +106,14 @@ func (view *View) SetCursor(x, y int) *View {
    @param    size_y  Font magnification level in Y-axis, 1 is 'original' size
 */
 /**************************************************************************/
-func (view *View) drawChar(x, y int, c int,
+func (view *View) drawChar(x, y int, c rune,
 	fg uint16, bg uint16, sizeX,
 	sizeY int) {
 	//Debug("drawChar (%d,%d) -> %c in buffer (%d,%d,%d,%d)",
 	//	x, y, c, view.buffer.X, view.buffer.Y, view.buffer.ww, view.buffer.wh)
 	if view.TextArea.Font == nil { // 'Classic' built-in font
-		if (x >= view.TextArea.currentW) || // Clip right
-			(y >= view.TextArea.currentH) || // Clip bottom
+		if (x >= view.TextArea.CurrentW) || // Clip right
+			(y >= view.TextArea.CurrentH) || // Clip bottom
 			((x + 6*view.TextArea.sX - 1) < 0) || // Clip left
 			((y + 8*view.TextArea.sY - 1) < 0) { // Clip top
 			return
@@ -121,8 +127,8 @@ func (view *View) drawChar(x, y int, c int,
 			for j := 0; j < 8; j++ {
 				xx := x + i*sizeX
 				yy := y + j*sizeY
-				if xx >= 0 && xx < view.TextArea.currentW &&
-					yy >= 0 && yy < view.TextArea.currentH {
+				if xx >= 0 && xx < view.TextArea.CurrentW &&
+					yy >= 0 && yy < view.TextArea.CurrentH {
 					if line&1 != 0 {
 						if sizeX == 1 && sizeY == 1 {
 							view.buffer.writePixel(view.InnerX+view.TextArea.MarginX+x, view.InnerY+view.TextArea.MarginY+yy, fg)
@@ -157,7 +163,7 @@ func (view *View) drawChar(x, y int, c int,
 
 		var w, h uint16
 		bitmap := view.TextArea.Font.Bitmap
-		c -= int(view.TextArea.Font.First)
+		c -= rune(view.TextArea.Font.First)
 		glyph := view.TextArea.Font.Glyphs[c]
 		bo := glyph.BitmapOffset
 		w = glyph.Width
@@ -217,8 +223,8 @@ func (view *View) drawChar(x, y int, c int,
 				bit++
 				px := x + (int(xo)+xx)*sizeX
 				py := y + (int(yo)+yy)*sizeY
-				if px >= 0 && px < view.TextArea.currentW &&
-					py >= 0 && py < view.TextArea.currentH {
+				if px >= 0 && px < view.TextArea.CurrentW &&
+					py >= 0 && py < view.TextArea.CurrentH {
 
 					// bits left to right correspond to increasing x
 					if bits&0x80 != 0 {
@@ -244,43 +250,44 @@ func (view *View) drawChar(x, y int, c int,
 	} // End classic vs custom font
 }
 
-func (view *View) WriteChar(c int, color it8951.Color, bgColor it8951.Color) int {
+func (view *View) WriteChar(c rune, color it8951.Color, bgColor it8951.Color) int {
 	//Debug("area %v", area)
+	//Debug("%d (%c)", c, c)
 	if view.TextArea.Font == nil { // 'Classic' built-in font
 		if c == '\n' { // Newline?
-			view.TextArea.cX = 0                     // Reset x to zero,
-			view.TextArea.cY += view.TextArea.sY * 8 // advance y one line
+			view.TextArea.CX = 0                     // Reset x to zero,
+			view.TextArea.CY += view.TextArea.sY * 8 // advance y one line
 		} else if c != '\r' { // Ignore carriage returns
-			if view.TextArea.Wrap && ((view.TextArea.cX + view.TextArea.sX*6) > view.TextArea.currentW) { // Off right?
-				view.TextArea.cX = 0                     // Reset x to zero,
-				view.TextArea.cY += view.TextArea.sY * 8 // advance y one line
+			if view.TextArea.Wrap && ((view.TextArea.CX + view.TextArea.sX*6) > view.TextArea.CurrentW) { // Off right?
+				view.TextArea.CX = 0                     // Reset x to zero,
+				view.TextArea.CY += view.TextArea.sY * 8 // advance y one line
 			}
-			view.drawChar(view.TextArea.cX, view.TextArea.cY, c, uint16(color), uint16(bgColor), view.TextArea.sX,
+			view.drawChar(view.TextArea.CX, view.TextArea.CY, c, uint16(color), uint16(bgColor), view.TextArea.sX,
 				view.TextArea.sY)
-			view.TextArea.cX += view.TextArea.sX * 6 // Advance x one char
+			view.TextArea.CX += view.TextArea.sX * 6 // Advance x one char
 		}
 	} else { // Custom font
 		if c == '\n' {
-			view.TextArea.cX = 0
-			view.TextArea.cY +=
+			view.TextArea.CX = 0
+			view.TextArea.CY +=
 				view.TextArea.sY * int(view.TextArea.Font.YAdvance)
 		} else if c != '\r' {
 			first := view.TextArea.Font.First
-			if (c >= int(first)) && (c <= int(view.TextArea.Font.Last)) {
-				glyph := view.TextArea.Font.Glyphs[c-int(first)]
+			if (c >= rune(first)) && (c <= rune(view.TextArea.Font.Last)) {
+				glyph := view.TextArea.Font.Glyphs[c-rune(first)]
 				w := glyph.Width
 				h := glyph.Height
 				if (w > 0) && (h > 0) { // Is there an associated bitmap?
 					xo := glyph.XOffset // sic
-					if view.TextArea.Wrap && ((view.TextArea.cX + view.TextArea.sX*(int(xo)+int(w))) > view.TextArea.currentW) {
-						view.TextArea.cX = 0
-						view.TextArea.cY += view.TextArea.sY *
+					if view.TextArea.Wrap && ((view.TextArea.CX + view.TextArea.sX*(int(xo)+int(w))) > view.TextArea.CurrentW) {
+						view.TextArea.CX = 0
+						view.TextArea.CY += view.TextArea.sY *
 							int(view.TextArea.Font.YAdvance)
 					}
-					view.drawChar(view.TextArea.cX, view.TextArea.cY, c, uint16(color), uint16(bgColor), view.TextArea.sX,
+					view.drawChar(view.TextArea.CX, view.TextArea.CY, c, uint16(color), uint16(bgColor), view.TextArea.sX,
 						view.TextArea.sY)
 				}
-				view.TextArea.cX +=
+				view.TextArea.CX +=
 					int(glyph.XAdvance) * view.TextArea.sX
 			}
 		}
@@ -290,7 +297,7 @@ func (view *View) WriteChar(c int, color it8951.Color, bgColor it8951.Color) int
 
 func (view *View) Write(text string, color it8951.Color, bgColor it8951.Color) {
 	for _, c := range text {
-		view.WriteChar(int(c), color, bgColor)
+		view.WriteChar(c, color, bgColor)
 	}
 }
 
@@ -301,25 +308,33 @@ func (view *View) WriteAt(x, y int, text string, color it8951.Color, bgColor it8
 		}
 	}()
 	//area := view.textArea
-	var xb, yb, wb, hb int
-	view.GetTextBounds(text, x, 0, &xb, &yb, &wb, &hb)
-	view.TextArea.cX = x
-	view.TextArea.cY = y - yb
+	x0, y0 := x+0, y+0
+	view.Xb, view.Yb, view.Wb, view.Hb = view.GetTextBounds(text, &x0, &y0)
+	view.TextArea.CX = x
+	view.TextArea.CY = y + view.Hb // - view.Yb
 	view.Write(text, color, bgColor)
 	return view
 }
 
 func (view *View) WriteCenteredIn(x, y, w, h int, text string, color it8951.Color, bgColor it8951.Color) *View {
-	var xb, yb, wb, hb int
-	view.GetTextBounds(text, x, y, &xb, &yb, &wb, &hb)
+	x0, y0 := x, y
+	xb, yb, wb, hb := view.GetTextBounds(text, &x0, &y0)
+	view.Xb = xb
+	view.Yb = yb
+	view.Wb = wb
+	view.Hb = hb
 	Debug("text bounds [%s],(%d,%d) -> (%d,%d,%d,%d)", text, x, y, xb, yb, wb, hb)
-	return view.WriteAt(x+(w-wb)/2, 1+y+(h-hb)/2, text, color, bgColor)
+	return view.WriteAt(x+(w-wb)/2+view.TextArea.MarginX, y+(h-hb)/2+view.TextArea.MarginY, text, color, bgColor)
 }
 func (view *View) WriteVCenteredAt(x int, text string, color it8951.Color, bgColor it8951.Color) *View {
-	var xb, yb, wb, hb int
-	view.GetTextBounds(text, x, 0, &xb, &yb, &wb, &hb)
-	//Debug("text bounds [%s],x=%d -> (%d,%d,%d,%d)", text, x, xb, yb, wb, hb)
-	return view.WriteAt(x, (view.InnerH-hb)/2, text, color, bgColor)
+	x0, y0 := x, 0
+	xb, yb, wb, hb := view.GetTextBounds(text, &x0, &y0)
+	view.Xb = xb
+	view.Yb = yb
+	view.Wb = wb
+	view.Hb = hb
+	Debug("text bounds [%s],x=%d -> (%d,%d,%d,%d)", text, x, xb, yb, wb, hb)
+	return view.WriteAt(x, (view.H-hb)/2, text, color, bgColor)
 }
 
 func (area *TextArea) SetFont(font *fonts.GfxFont) *TextArea {
@@ -327,12 +342,12 @@ func (area *TextArea) SetFont(font *fonts.GfxFont) *TextArea {
 		if area.Font == nil { // And no current font struct?
 			// Switching from classic to new font behavior.
 			// Move cursor pos down 6 pixels so it's on baseline.
-			area.cY += 6
+			area.CY += 6
 		}
 	} else if area.Font != nil { // NULL passed.  Current font struct defined?
 		// Switching from new to classic font behavior.
 		// Move cursor pos up 6 pixels so it's at top-left of char.
-		area.cY -= 6
+		area.CY -= 6
 	}
 	area.Font = font
 	return area
@@ -350,7 +365,16 @@ func (area *TextArea) SetSizes(sizeX, sizeY int) *TextArea {
 	return area
 }
 
-func (view *View) charBounds(c int, x, y, minX, minY, maxX, maxY *int) {
+func (view *View) GetCharBounds(c rune, x, y *int) (minX, minY, maxX, maxY int) {
+	minX = 10000
+	minY = 10000
+	maxX = -1
+	maxY = -1
+	view.getCharBounds(c, x, y, &minX, &minY, &maxX, &maxY)
+	return minX, minY, maxX, maxY
+}
+
+func (view *View) getCharBounds(c rune, x, y *int, minX, minY, maxX, maxY *int) {
 	area := view.TextArea
 	if area.Font != nil {
 		if c == '\n' { // Newline?
@@ -359,14 +383,14 @@ func (view *View) charBounds(c int, x, y, minX, minY, maxX, maxY *int) {
 		} else if c != '\r' { // Not a carriage return; is normal char
 			first := int(area.Font.First)
 			last := int(area.Font.Last)
-			if (c >= first) && (c <= last) { // Char present in this font?
-				glyph := area.Font.Glyphs[c-first]
+			if (c >= rune(first)) && (c <= rune(last)) { // Char present in this font?
+				glyph := area.Font.Glyphs[c-rune(first)]
 				gw := glyph.Width
 				gh := glyph.Height
 				xa := glyph.XAdvance
 				xo := glyph.XOffset
 				yo := glyph.YOffset
-				if area.Wrap && (*x+((int(xo)+int(gw))*area.sX)) > area.currentW {
+				if area.Wrap && (*x+((int(xo)+int(gw))*area.sX)) > area.CurrentW {
 					*x = 0 // Reset x to zero, advance y by one line
 					*y += area.sY * int(area.Font.YAdvance)
 				}
@@ -397,7 +421,7 @@ func (view *View) charBounds(c int, x, y, minX, minY, maxX, maxY *int) {
 			*y += area.sY * 8 // advance y one line
 			// min/max x/y unchaged -- that waits for next 'normal' character
 		} else if c != '\r' { // Normal char; ignore carriage returns
-			if area.Wrap && ((*x + area.sX*6) > area.currentW) { // Off right?
+			if area.Wrap && ((*x + area.sX*6) > area.CurrentW) { // Off right?
 				*x = 0            // Reset x to zero,
 				*y += area.sY * 8 // advance y one line
 			}
@@ -420,30 +444,31 @@ func (view *View) charBounds(c int, x, y, minX, minY, maxX, maxY *int) {
 	}
 }
 
-func (view *View) GetTextBounds(text string, x, y int, xb, yb, wb, hb *int) {
+func (view *View) GetTextBounds(text string, x, y *int) (xb, yb, wb, hb int) {
 	minX := 10000
 	minY := 10000
 	maxX := -1
 	maxY := -1
 	// Bound rect is intentionally initialized inverted, so 1st char sets it
 
-	*xb = x // Initial position is value passed in
-	*yb = y
-	*wb = 0
-	*hb = 0 // Initial size is zero
+	xb = *x // Initial position is value passed in
+	yb = *y
+	wb = 0
+	hb = 0 // Initial size is zero
 
 	for _, c := range text {
 		// charBounds() modifies x/y to advance for each character,
 		// and min/max x/y are updated to incrementally build bounding rect.
-		view.charBounds(int(c), &x, &y, &minX, &minY, &maxX, &maxY)
+		view.getCharBounds(c, x, y, &minX, &minY, &maxX, &maxY)
 	}
 
 	if maxX >= minX { // If legit string bounds were found...
-		*xb = minX            // Update x1 to least X coord,
-		*wb = maxX - minX + 1 // And w to bound rect width
+		xb = minX            // Update x1 to least X coord,
+		wb = maxX - minX + 1 // And w to bound rect width
 	}
 	if maxY >= minY { // Same for height
-		*yb = minY
-		*hb = maxY - minY + 1
+		yb = minY
+		hb = maxY - minY + 1
 	}
+	return xb, yb, wb, hb
 }

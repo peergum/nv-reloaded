@@ -26,6 +26,7 @@ import (
 
 type Stats struct {
 	*Document
+	view *display.View
 }
 
 type Fields []FieldDefinition
@@ -43,16 +44,19 @@ var (
 func init() {
 }
 
-func StatsNew(document *Document) display.Content {
-	return &Stats{document}
+func (stats *Stats) Type() string {
+	return "stats"
 }
 
-func (stats *Stats) Load() {
+func (stats *Stats) Load(view *display.View) {
+	stats.view = view
 	fields = Fields{
 		FieldDefinition{"Title", "%s", stats.Title},
 		FieldDefinition{"File", "%s", stats.Filename},
-		FieldDefinition{"Words", "%d", len(stats.Words)},
-		FieldDefinition{"Paragraphs", "%d", len(stats.Paragraphs)},
+		FieldDefinition{"Characters", "%d", stats.cCount},
+		FieldDefinition{"Lines", "%d", stats.lCount},
+		FieldDefinition{"Words", "%d", stats.wCount},
+		FieldDefinition{"Paragraphs", "%d", stats.pCount},
 	}
 }
 
@@ -66,15 +70,16 @@ func (stats *Stats) GetTitle() string {
 	return "Stats"
 }
 
-func (stats *Stats) Print(view *display.View) {
+func (stats *Stats) Print() {
+	view := stats.view
 	view.TextArea.BgColor = 0xe // ensure transparent BG
 	labelWidth := 0
-	var xb, yb, wb, hb int
 	labelFont := &fonts.CourierStd20pt8b
 	font := view.TextArea.Font
 	view.TextArea.SetFont(labelFont)
 	for _, field := range fields {
-		view.GetTextBounds(field.name, 0, 0, &xb, &yb, &wb, &hb)
+		x0, y0 := 0, 0
+		xb, _, wb, _ := view.GetTextBounds(field.name, &x0, &y0)
 		if wb+xb > labelWidth {
 			labelWidth = wb + xb
 		}

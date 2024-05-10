@@ -22,23 +22,27 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
 	"io"
 	"log"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
+type Keyboards []Keyboard
+
 type Keyboard struct {
-	File   string
-	Name   string
-	Vendor string
-	Events EventTypes
+	File        string
+	Name        string
+	Vendor      string
+	Events      EventTypes
+	doneChannel chan bool
 }
 
 type EventTypes map[int]*EventType
@@ -56,15 +60,25 @@ type EventCode struct {
 }
 
 type KeyEvent struct {
-	Sec      uint64
-	USec     uint64
-	Type     int
-	Keycode  int
-	Value    rune
-	TypeName string
-	KeyName  string
-	Char     rune
+	Sec        uint64
+	USec       uint64
+	Type       int
+	Keycode    int
+	Value      rune
+	TypeName   string
+	KeyName    string
+	Char       rune
+	SpecialKey bool
 }
+
+const (
+	Shift uint16 = 1 << iota
+	Ctrl
+	Alt
+	Meta
+	CapsLock
+	None uint16 = 0
+)
 
 const (
 	KEY_SHIFT = 1 << iota
@@ -83,17 +97,28 @@ const (
 )
 
 var (
-	keyChannel = make(chan *KeyEvent, 100)
-	metaKey    uint16
+	eventChannel    <-chan bool                 // receives termination event for all keyboards
+	keyboardChannel = make(chan *Keyboard, 5)   // informs about new keyboards
+	keyChannel      = make(chan *KeyEvent, 100) // informs key changes
+	metaKey         uint16
+	keyboards       Keyboards
 )
 
 func KeyChannel() <-chan *KeyEvent {
 	return keyChannel
 }
 
-func ReadKeyboard(keyboard Keyboard, eventChannel <-chan string) error {
-	log.Println("->", keyboard.Name)
-	file, err := os.Open("/dev/input/" + keyboard.File)
+func KeyboardChannel() <-chan *Keyboard {
+	return keyboardChannel
+}
+
+func Metakey() uint16 {
+	return metaKey
+}
+
+func (keyboard *Keyboard) ReadKeyboard() error {
+	Debug("reading keyboard %s at %s", keyboard.Name, keyboard.File)
+	file, err := os.Open(keyboard.File)
 	if err != nil {
 		log.Fatal(err)
 		return err
@@ -104,8 +129,11 @@ func ReadKeyboard(keyboard Keyboard, eventChannel <-chan string) error {
 	done := false
 	for !done {
 		select {
+		case <-keyboard.doneChannel:
+			// if we receive anything here, it means keyboard's gone
+			return nil
 		case event := <-eventChannel:
-			if event == "done" {
+			if event {
 				done = true
 			}
 		default:
@@ -132,23 +160,34 @@ func ReadKeyboard(keyboard Keyboard, eventChannel <-chan string) error {
 						keyEvent.KeyName = keyboard.Events[keyEvent.Type].Codes[keyEvent.Keycode].Name
 					}
 				}
-				Debug("KeyEvent: %v", keyboard.Event(keyEvent))
+				//Debug("KeyEvent: %v", keyboard.Event(keyEvent))
 				//_ = keyboard.Event(keyEvent)
 				//Debug("%v", keyboard)
 
+				specialKey := None
+				keyEvent.SpecialKey = false
 				switch keyEvent.KeyName {
-				case "KEY_LEFTSHIFT":
-				case "KEY_RIGHTSHIFT":
-				case "KEY_LEFTCTRL":
-				case "KEY_RIGHTCTRL":
-				case "KEY_LEFTALT":
-				case "KEY_RIGHTALT":
-				case "KEY_LEFTMETA":
-				case "KEY_RIGHTMETA":
+				case "KEY_SHIFT", "KEY_LEFTSHIFT", "KEY_RIGHTSHIFT":
+					specialKey = Shift
+				case "KEY_CTRL", "KEY_LEFTCTRL", "KEY_RIGHTCTRL":
+					specialKey = Ctrl
+				case "KEY_ALT", "KEY_LEFTALT", "KEY_RIGHTALT":
+					specialKey = Alt
+				case "KEY_META", "KEY_LEFTMETA", "KEY_RIGHTMETA":
+					specialKey = Meta
 				case "LED_CAPSL": // caps lock on or off
+					specialKey = CapsLock
+				}
+				if specialKey != None {
+					keyEvent.SpecialKey = true
+					if keyEvent.Value == 0 {
+						metaKey &= ^specialKey
+					} else {
+						metaKey |= specialKey
+					}
 				}
 				if keymapEnUS[keyEvent.KeyName] != nil {
-					keyEvent.Char = keymapEnUS[keyEvent.KeyName][0]
+					keyEvent.Char = keymapEnUS[keyEvent.KeyName][metaKey]
 				}
 				keyChannel <- &keyEvent
 				break
@@ -159,103 +198,157 @@ func ReadKeyboard(keyboard Keyboard, eventChannel <-chan string) error {
 	return nil
 }
 
-func Search() (keyboards []Keyboard, err error) {
-	Debug("Searching for keyboards...")
-	var files []os.DirEntry
-	if files, err = os.ReadDir("/dev/input"); err != nil {
-		return nil, errors.New("input directory not found")
+func CheckKeyboard(filename string) {
+	Debug("File %s", filename)
+	if !strings.Contains(filename, "event") {
+		Debug("Not an event file")
+		return
 	}
-	for _, file := range files {
-		Debug("File %s", file.Name())
-		//if strings.Contains(file.Name(), "event") {
-		var out []byte
-		cmd := exec.Command("/usr/bin/udevadm", "info", "/dev/input/"+file.Name())
-		if out, err = cmd.Output(); err == nil {
+	ready := false
+	for !ready {
+		cmd := exec.Command("/usr/bin/udevadm", "info", filename)
+		var kbd Keyboard
+		if out, err := cmd.Output(); err == nil {
 			scanner := bufio.NewScanner(bytes.NewReader(out))
 			scanner.Split(bufio.ScanLines)
-			kbd := Keyboard{
+			kbd = Keyboard{
 				Events: make(EventTypes),
 			}
 			isKeys := false
 			for scanner.Scan() {
+				Debug(scanner.Text())
 				text := scanner.Text()
 				if strings.Contains(text, "ID_VENDOR=") {
 					kbd.Vendor = "" + strings.Split(text, "=")[1]
 					Debug("Found vendor: %s", kbd.Vendor)
 				}
-				if strings.Contains(text, "ID_INPUT_KEYBOARD=1") {
-					Debug("%s is a keyboard", file.Name())
-					kbd.File = file.Name()
+				if strings.Contains(text, "ID_INPUT_KEYBOARD=1") ||
+					strings.Contains(text, "ID_INPUT_KEY=1") {
+					Debug("%s is a keyboard", filename)
+					kbd.File = filename
 					isKeys = true
 				}
-			}
-			if isKeys {
-				keyboards = append(keyboards, kbd)
-			}
-		}
-	}
-
-	if len(keyboards) == 0 {
-		return nil, errors.New("no keyboard found")
-	}
-
-	for _, kbd := range keyboards {
-		Debug("Checking keyboard %s (%s)", kbd.File, kbd.Vendor)
-		cmd := exec.Command("/usr/bin/evtest", "/dev/input/"+kbd.File)
-		//var stdin io.WriteCloser
-		var stdout io.ReadCloser
-		//stdin, err = cmd.StdinPipe()
-		stdout, err = cmd.StdoutPipe()
-		if err = cmd.Start(); err == nil {
-			scanner := bufio.NewScanner(stdout)
-			scanner.Split(bufio.ScanLines)
-			typeNum := -1
-			var eventType *EventType
-			for scanner.Scan() {
-				//Debug("Scanning %s", scanner.Text())
-				text := scanner.Text()
-				if strings.Contains(text, "Input device name:") {
-					kbd.Name = strings.Split(text, "\"")[1]
-				} else if strings.Contains(text, "Event type") {
-					eventType = &EventType{
-						Codes: make(EventCodes),
-					}
-					ev := strings.Fields(text)
-					typeNum, err = strconv.Atoi(ev[2])
-					if err == nil {
-						eventType.Name = "" + ev[3][1:len(ev[3])-1]
-						kbd.Events[typeNum] = eventType
-						//Debug("eventtype: %d,%s", typeNum, eventType.Name)
-					} else {
-						typeNum = -1
-					}
-				} else if typeNum >= 0 && strings.Contains(text, "Event code") {
-					eventCode := &EventCode{}
-					ev := strings.Fields(text)
-					var codeNum int
-					codeNum, err = strconv.Atoi(ev[2])
-					if err == nil {
-						eventCode.Name = "" + ev[3][1:len(ev[3])-1]
-						if len(ev) >= 6 && ev[4] == "state" {
-							eventCode.State, err = strconv.Atoi(ev[5])
-						}
-						eventType.Codes[codeNum] = eventCode
-						kbd.Events[typeNum] = eventType
-						//Debug("eventcode: %d,%s - %d", codeNum, eventCode.Name, eventCode.State)
-					}
-				} else if strings.Contains(text, "interrupt to exit") {
-					cmd.Process.Kill()
-					//cmd.Wait()
+				if strings.Contains(text, "ID_INPUT=1") {
+					// this should tell input is ready
+					ready = true
 				}
 			}
-			//Debug("Found keyboard %s by %s on %s - events:\n %s", kbd.Name, kbd.Vendor, kbd.File, kbd.Events)
-		} else {
-			Debug("Error %v", err)
+			// wait until input is seen as valid...
+			if !ready {
+				continue
+			}
+			if !isKeys {
+				Debug("%s is not a keyboard", filename)
+				return
+			}
+			Debug("Checking keyboard %s (%s)", kbd.File, kbd.Vendor)
+			cmd := exec.Command("/usr/bin/evtest", kbd.File)
+			//var stdin io.WriteCloser
+			var stdout io.ReadCloser
+			//stdin, err = cmd.StdinPipe()
+			stdout, err = cmd.StdoutPipe()
+			if err = cmd.Start(); err == nil {
+				scanner := bufio.NewScanner(stdout)
+				scanner.Split(bufio.ScanLines)
+				typeNum := -1
+				var eventType *EventType
+				for scanner.Scan() {
+					Debug("Scanning %s", scanner.Text())
+					text := scanner.Text()
+					if strings.Contains(text, "Input device name:") {
+						kbd.Name = strings.Clone(strings.Split(text, "\"")[1])
+					} else if strings.Contains(text, "Event type") {
+						eventType = &EventType{
+							Codes: make(EventCodes),
+						}
+						ev := strings.Fields(text)
+						typeNum, err = strconv.Atoi(ev[2])
+						if err == nil {
+							eventType.Name = "" + ev[3][1:len(ev[3])-1]
+							kbd.Events[typeNum] = eventType
+						} else {
+							typeNum = -1
+						}
+					} else if typeNum >= 0 && strings.Contains(text, "Event code") {
+						eventCode := &EventCode{}
+						ev := strings.Fields(text)
+						var codeNum int
+						codeNum, err = strconv.Atoi(ev[2])
+						if err == nil {
+							eventCode.Name = "" + ev[3][1:len(ev[3])-1]
+							if len(ev) >= 6 && ev[4] == "state" {
+								eventCode.State, err = strconv.Atoi(ev[5])
+							}
+							eventType.Codes[codeNum] = eventCode
+							kbd.Events[typeNum] = eventType
+						}
+					} else if strings.Contains(text, "interrupt to exit") {
+						cmd.Process.Kill()
+					}
+				}
+			} else {
+				Debug("Error %v", err)
+			}
+			kbd.doneChannel = make(chan bool) // termination channel
+			Debug("Keyboard %s added", filename)
+			keyboards = append(keyboards, kbd)
+			keyboardChannel <- &kbd
+			go kbd.ReadKeyboard()
 		}
 	}
+}
 
+func Search(mainEventChannel <-chan bool) {
+	var err error
+
+	eventChannel = mainEventChannel // will receive termination from main
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		fmt.Println("ERROR", err)
+	}
+	defer watcher.Close()
+
+	err = watcher.Add("/dev/input")
+	if err != nil {
+		Debug("Can't check for input events")
+		keyboardChannel <- nil
+	}
+
+	// initial check for keyboards
+	var files []os.DirEntry
+	if files, err = os.ReadDir("/dev/input"); err != nil {
+		Debug("Input directory not found")
+		keyboardChannel <- nil // inform error
+		return
+	}
+	Debug("Waiting for keyboards...")
+	for _, file := range files {
+		if !strings.Contains(file.Name(), "event") {
+			continue
+		}
+		CheckKeyboard("/dev/input/" + file.Name())
+	}
+	for {
+		select {
+		case event := <-watcher.Events:
+			Debug("input event: %v", event)
+			if event.Has(fsnotify.Create) {
+				CheckKeyboard(event.Name)
+			} else if event.Has(fsnotify.Remove) {
+				kbd := slices.IndexFunc(keyboards, func(kbd Keyboard) bool {
+					return kbd.File == event.Name
+				})
+				if kbd >= 0 {
+					Debug("Keyboard %s removed", keyboards[kbd].Name)
+					keyboards[kbd].doneChannel <- true
+					keyboards = slices.Delete(keyboards, kbd, kbd+1)
+				}
+			}
+
+		}
+	}
 	Debug("Done with input")
-	return keyboards, nil
 }
 
 func (events EventTypes) String() (res string) {

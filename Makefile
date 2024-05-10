@@ -24,12 +24,14 @@ start: install
 	sudo systemctl daemon-reload
 	sudo systemctl restart nv
 
-run: install
+stop:
 	sudo systemctl stop nv
-	./nv -debug -epd -doc -display -input
+
+run: stop install
+	./nv -debug -doc -display -input
 
 debug: nv
-	sudo gdb --args ./nv -debug -epd -doc -display
+	sudo gdb --args ./nv -debug -doc -display -input
 
 fonts: display/fontconvert/fontconvert2go
 	if [ -f display/fontconvert/fontconvert2go ]; then rm display/fontconvert/fontconvert2go; fi

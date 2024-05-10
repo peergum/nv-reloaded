@@ -17,3 +17,61 @@
 */
 
 package content
+
+import (
+	"nv/display"
+	"nv/display/fonts-go"
+)
+
+type Welcome struct {
+	*Document
+}
+
+var ()
+
+func init() {
+}
+
+func (welcome *Welcome) Type() string {
+	return "welcome"
+}
+
+func (welcome *Welcome) Load(view *display.View) {
+	welcome.Document = &Document{
+		Filename: ".welcome.txt",
+		Title:    "Welcome",
+	}
+	view.SetTextArea(&fonts.Montserrat_Medium20pt8b, 100, 100).Update()
+	welcome.Document.Load(view)
+	welcome.view.Rectangle(100, 100, view.W-200, view.H-200, 1, display.Black)
+}
+
+func (welcome *Welcome) Refresh() {
+}
+
+func (welcome *Welcome) Save() {
+}
+
+func (welcome *Welcome) GetTitle() string {
+	return "Welcome"
+}
+
+func (welcome *Welcome) Print() {
+	Debug("Loading welcome")
+	view := welcome.view
+	view.FillRectangle(100, 100, view.InnerW-200, view.InnerH-200, 10, display.Gray13, display.Black)
+	welcome.Document.Print()
+	//view := welcome.view
+	//var text string
+	//y := paragraphSpacing
+	//for _, paragraph := range paragraphs {
+	//	text = paragraph + "\n"
+	//	x0, y0 := paragraphIndent, y
+	//	_, _, _, hb := view.GetTextBounds(text, &x0, &y0)
+	//	if y+hb > view.InnerH {
+	//		break
+	//	}
+	//	view.WriteAt(paragraphIndent, y, text, 0x0, display.Gray13)
+	//	y += hb + paragraphSpacing
+	//}
+}

@@ -45,6 +45,7 @@ type View struct {
 	buffer                         Buffer
 	TextArea                       TextArea
 	content                        Content
+	Xb, Yb, Wb, Hb                 int
 }
 
 const (
@@ -286,7 +287,11 @@ func (view *View) Refresh(x, y, w, h int) *View {
 		H: uint16(view.H),
 	}
 	imageInfo.HostAreaPackedPixelWrite(areaInfo, view.buffer.bpp, true)
-	it8951.DisplayArea(uint16(x), uint16(y), uint16(w), uint16(h), it8951.GC16Mode)
+	mode := it8951.GC16Mode
+	if view.buffer.bpp == 1 {
+		mode = it8951.A2Mode
+	}
+	it8951.DisplayArea(uint16(x), uint16(y), uint16(w), uint16(h), mode)
 	it8951.WaitForDisplayReady()
 	return view
 }
