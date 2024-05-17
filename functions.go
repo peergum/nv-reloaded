@@ -24,6 +24,70 @@ import (
 	"nv/input"
 )
 
+var (
+	F1 = content.FunctionKey{
+		input.None:  {"Help", fnDoNothing},
+		input.Shift: {"Shortcuts", fnDoNothing},
+	}
+	F2 = content.FunctionKey{
+		input.None: {"New", fnNewDocument},
+	}
+	F3 = content.FunctionKey{
+		input.None:  {"Load", fnLoadDocument},
+		input.Shift: {"Save", fnDoNothing},
+		input.Ctrl:  {"Save As", fnDoNothing},
+		input.Alt:   {"Reload", fnDoNothing},
+	}
+	F4 = content.FunctionKey{
+		input.None: {"Close", fnDoNothing},
+		input.Alt:  {"Exit", fnExit},
+	}
+	F5 = content.FunctionKey{
+		input.None:  {"Top", fnDoNothing},
+		input.Shift: {"Bottom", fnDoNothing},
+	}
+	F6 = content.FunctionKey{
+		input.None: {"Setup Wifi", fnDoNothing},
+	}
+	F7 = content.FunctionKey{
+		input.None:               {"Start Block", fnDoNothing},
+		input.Shift:              {"End Block", fnDoNothing},
+		input.Ctrl:               {"Cut Block", fnDoNothing},
+		input.Ctrl | input.Shift: {"Ins Block", fnDoNothing},
+		input.Alt:                {"Del Block", fnDoNothing},
+	}
+	F8 = content.FunctionKey{
+		input.None:  {"Cpy Paragr.", fnDoNothing},
+		input.Shift: {"Ins Paragr.", fnDoNothing},
+		input.Ctrl:  {"Cut Paragr.", fnDoNothing},
+		input.Alt:   {"Del Paragr.", fnDoNothing},
+	}
+	F9 = content.FunctionKey{
+		input.None: {"Ins Picture", fnDoNothing},
+		input.Ctrl: {"Cut Picture", fnDoNothing},
+		input.Alt:  {"Del Picture", fnDoNothing},
+	}
+	F10 = content.FunctionKey{
+		input.None:  {"E-mail", fnDoNothing},
+		input.Shift: {"G-Drive", fnDoNothing},
+		input.Ctrl:  {"Dropbox", fnDoNothing},
+		input.Alt:   {"PDF", fnDoNothing},
+	}
+	F11 = content.FunctionKey{
+		input.None: {"Stats", fnToggleStats},
+	}
+	F12 = content.FunctionKey{
+		input.None:                           {"Sleep", fnDoNothing},
+		input.Shift:                          {"Reboot", fnReboot},
+		input.Ctrl:                           {"Shutdown", fnShutdown},
+		input.Shift | input.Ctrl | input.Alt: {"Factory Reset", fnDoNothing},
+	}
+
+	functions = content.FnPanel{
+		FunctionKeys: content.FunctionKeys{0: F1, 1: F2, 2: F3, 3: F4, 4: F5, 5: F6, 6: F7, 7: F8, 8: F9, 9: F10, 10: F11, 11: F12},
+	}
+)
+
 func fnDoNothing() {}
 
 func fnToggleFnWindow() {
@@ -39,8 +103,7 @@ func fnToggleFnWindow() {
 			})
 			functions.SetMeta(input.None)
 			fnWindow.SetContent(&functions, 0, 0).
-				Load().
-				Update()
+				Load()
 		} else {
 			fnWindow.Show()
 		}
@@ -55,7 +118,7 @@ func fnToggleStats() {
 	}
 	statsWindowToggle = !statsWindowToggle
 
-	if statsWindowToggle && mainWindow.View != nil {
+	if statsWindowToggle {
 		if statsWindow == nil {
 			stats = &content.Stats{
 				Document: currentDoc,
@@ -72,8 +135,7 @@ func fnToggleStats() {
 			})
 
 			statsWindow.SetContent(stats, 10, 10).
-				Load().
-				Update()
+				Load()
 
 		} else {
 			statsWindow.Show()
@@ -95,7 +157,7 @@ func fnNewDocument() {
 		Title:    "New Document",
 	}
 
-	mainWindow.SetContent(currentDoc, 10, 10).Load().Update()
+	mainWindow.SetContent(currentDoc, 10, 10).Load()
 }
 
 func fnLoadDocument() {
@@ -104,10 +166,12 @@ func fnLoadDocument() {
 		fnWindowToggle = false
 	}
 	currentDoc = &content.Document{
-		Filename: "abc.txt",
-		Title:    "Example Document",
+		Filename: "sample2.txt",
+		Filetype: "asset",
+		//Filename: "document.docx",
+		Title: "Example Document",
 	}
-	mainWindow.SetContent(currentDoc, 10, 10).Load().Update()
+	mainWindow.SetContent(currentDoc, 10, 10).Load()
 }
 
 func fnShutdown() {
@@ -118,4 +182,8 @@ func fnShutdown() {
 func fnReboot() {
 	shouldTerminate = true // normal end
 	shouldReboot = true
+}
+
+func fnExit() {
+	shouldTerminate = true
 }

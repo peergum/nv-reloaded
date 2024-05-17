@@ -26,7 +26,8 @@ import (
 
 type FnPanel struct {
 	FunctionKeys
-	view *display.View
+	view     *display.View
+	metaKeys uint16
 }
 
 type FunctionKeys []FunctionKey
@@ -47,7 +48,12 @@ var (
 	metaKeys     uint16
 )
 
-func init() {
+func (fnPanel *FnPanel) Init(view *display.View) (views []*display.View) {
+	fnPanel.view = view
+	view.Fill(0, display.White, display.Black).
+		SetTextArea(&fonts.CourierStd20pt8b, 0, 0).
+		Update()
+	return append(views, fnPanel.view)
 }
 
 func (fnPanel *FnPanel) Type() string {
@@ -55,11 +61,10 @@ func (fnPanel *FnPanel) Type() string {
 }
 
 func (fnPanel *FnPanel) SetMeta(keys uint16) {
-	metaKeys = keys
+	fnPanel.metaKeys = keys
 }
 
-func (fnPanel *FnPanel) Load(view *display.View) {
-	fnPanel.view = view
+func (fnPanel *FnPanel) Load() {
 }
 
 func (fnPanel *FnPanel) Refresh() {
@@ -89,15 +94,16 @@ func (fnPanel *FnPanel) Print() {
 		view.TextArea.SetFont(&fonts.Montserrat_Medium12pt8b)
 		view.WriteCenteredIn((i%numCols)*fnWidth+4, (i/numCols)*fnHeight+4, fnHeight, fnHeight-8, fmt.Sprintf("F%d", i+1), display.Black, display.Transparent)
 		fn := (fnPanel.FunctionKeys)[i]
-		if fn != nil && fn[metaKeys] != nil {
+		if fn != nil && fn[fnPanel.metaKeys] != nil {
 			view.TextArea.SetFont(&fonts.Montserrat_Medium16pt8b)
 			x0, y0 := 0, 0
-			_, _, wb, _ := view.GetTextBounds(fn[metaKeys].Label, &x0, &y0)
-			Debug("Fn %d, meta: %d -> %v", i+1, metaKeys, fn[metaKeys])
+			_, _, wb, _ := view.GetTextBounds(fn[fnPanel.metaKeys].Label, &x0, &y0)
+			Debug("Fn %d, meta: %d -> %v", i+1, fnPanel.metaKeys, fn[fnPanel.metaKeys])
 			if wb >= fnWidth-fnHeight-10 {
 				view.TextArea.SetFont(&fonts.Montserrat_Medium12pt8b)
 			}
-			view.WriteCenteredIn((i%numCols)*fnWidth+fnHeight, (i/numCols)*fnHeight, fnWidth-fnHeight, fnHeight, fn[metaKeys].Label, display.White, panelBgColor)
+			view.WriteCenteredIn((i%numCols)*fnWidth+fnHeight, (i/numCols)*fnHeight, fnWidth-fnHeight, fnHeight, fn[fnPanel.metaKeys].Label, display.White, panelBgColor)
 		}
 	}
+	view.Update()
 }

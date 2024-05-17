@@ -28,7 +28,7 @@ var (
 )
 
 func init() {
-	flag.BoolVar(&docDebug, "doc", false, "debug mode for documents")
+	flag.BoolVar(&docDebug, "dc", false, "debug mode for documents")
 }
 
 func Debug(format string, args ...interface{}) {

@@ -1,11 +1,11 @@
 [Unit]
 Description=NV-Reloaded Application on %I
-#DefaultDependencies=Yes
-Requires=bluetooth.target multi-user.target
+DefaultDependencies=Yes
+#Requires=bluetooth.target multi-user.target
 
 [Service]
-ExecStart=/home/phil/dev/nv-go/nv -debug -epd -display -doc
-PrivateTmp=Yes
+ExecStart=/home/phil/dev/nv-go/nv -d -dd -dc -di
+#PrivateTmp=Yes
 WorkingDirectory=/home/phil
 
 [Install]

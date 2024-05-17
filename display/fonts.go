@@ -310,8 +310,8 @@ func (view *View) WriteAt(x, y int, text string, color it8951.Color, bgColor it8
 	//area := view.textArea
 	x0, y0 := x+0, y+0
 	view.Xb, view.Yb, view.Wb, view.Hb = view.GetTextBounds(text, &x0, &y0)
-	view.TextArea.CX = x
-	view.TextArea.CY = y + view.Hb // - view.Yb
+	view.TextArea.CX = x + (x - view.Xb)
+	view.TextArea.CY = y + (y - view.Yb) // + view.Hb // - view.Yb
 	view.Write(text, color, bgColor)
 	return view
 }
@@ -324,7 +324,7 @@ func (view *View) WriteCenteredIn(x, y, w, h int, text string, color it8951.Colo
 	view.Wb = wb
 	view.Hb = hb
 	Debug("text bounds [%s],(%d,%d) -> (%d,%d,%d,%d)", text, x, y, xb, yb, wb, hb)
-	return view.WriteAt(x+(w-wb)/2+view.TextArea.MarginX, y+(h-hb)/2+view.TextArea.MarginY, text, color, bgColor)
+	return view.WriteAt(x+(w-wb)/2, y+(h-hb)/2, text, color, bgColor)
 }
 func (view *View) WriteVCenteredAt(x int, text string, color it8951.Color, bgColor it8951.Color) *View {
 	x0, y0 := x, 0

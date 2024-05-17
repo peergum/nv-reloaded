@@ -20,34 +20,50 @@ package content
 
 import (
 	"bufio"
-	"fmt"
-	"nv/display"
+	"embed"
+	"io/fs"
+	"math"
+	rand2 "math/rand"
+	display "nv/display"
+	"nv/display/fonts-go"
 	"nv/input"
 	"os"
 	"strings"
 	"time"
 )
 
+//go:embed assets
+var Files embed.FS
+
 type Document struct {
-	Title            string
-	Filename         string
-	Words            *Element   // Word pointer to easily navigate/edit
-	Paragraphs       *Paragraph // Paragraph pointer to easily navigate/edit
-	LastParagraph    *Paragraph
-	cCount           int
-	wCount           int
-	pCount           int
-	lCount           int
-	currentParagraph *Paragraph // current paragraph
-	currentElement   *Element   // current char in element
-	pos              int
-	Modified         bool
-	view             *display.View
-	x, y             int
-	Ready            bool // document ready to edit
-	//Editable         bool
-	//TopWord        int   // word at top of displayed area
-	//BottomWord     int   // word at bottom of displayed area
+	Title                string
+	Filename             string
+	Filetype             string
+	Words                *Element   // Word pointer to easily navigate/edit
+	Paragraphs           *Paragraph // Paragraph pointer to easily navigate/edit
+	LastParagraph        *Paragraph
+	Lines                map[int]Elements
+	cCount               int
+	wCount               int
+	pCount               int
+	lCount               int
+	cLine                int
+	topLine              int
+	bottomLine           int
+	currentParagraph     *Paragraph // current paragraph
+	currentElement       *Element   // current char in element
+	pos                  int        // cursor position in element
+	Modified             bool
+	RefreshNeeded        bool
+	view                 *display.View
+	scrollBarView        *display.View
+	scrollBar            bool
+	x, y                 int
+	mx, my               int
+	Ready                bool // document ready to edit
+	paragraphIndent      bool
+	paragraphIndentValue string
+	paragraphSpacing     bool
 }
 
 type Paragraph struct {
@@ -55,10 +71,12 @@ type Paragraph struct {
 	prev         *Paragraph
 	firstElement *Element
 	lastElement  *Element
+	yStart       int
+	yEnd         int
 }
 
 // Elements are space separated tokens in a paragraph
-type Elements []Element
+type Elements []*Element
 
 type Element struct {
 	word      []rune   // a simple word
@@ -67,6 +85,10 @@ type Element struct {
 	emphasis  Emphasis // special effects
 	prev      *Element // points to next Element
 	next      *Element // points to next Element
+	xStart    int      // x start position in line
+	xWidth    int      // x end position in line
+	yStart    int      // y start position in line
+	yHeight   int      // y end position in line
 	paragraph *Paragraph
 }
 
@@ -83,23 +105,164 @@ const (
 )
 
 var (
-	cursorOn   bool
-	cursorTS   time.Time
-	keyTS      time.Time
-	typedChars string
-	charCount  int
-	lines      map[int]Elements
-	cLine      int
+	cursorOn             bool
+	cursorTS             time.Time
+	keyTS                time.Time
+	typedChars           string
+	charCount            int
+	lines                map[int]Elements
+	typingBufferMaxDelay = 200 * time.Millisecond
+	movingKeyCount       int // how many times arrows were pressed
+	direction            int
 )
+
+func (document *Document) Init(view *display.View) (views []*display.View) {
+	// set up default margins
+	Debug("Initializing document")
+	if document.mx == 0 || document.my == 0 {
+		document.mx = 20
+		document.my = 20
+		document.scrollBar = true
+		document.paragraphIndent = defaultParagraphIndent
+		document.paragraphIndentValue = defaultParagraphIndentValue
+		document.paragraphSpacing = defaultParagraphSpacing
+
+	}
+	scrollBarWidth := 0
+	if document.scrollBar {
+		scrollBarWidth = defaultScrollBarWidth
+	}
+	document.view = view.NewView(0, 0, view.InnerW-scrollBarWidth, view.InnerH, 4).
+		Fill(0, display.White, display.Black).
+		SetTextArea(regularFont, document.mx, document.my) /*.
+		Update()*/
+	views = append(views, document.view)
+	if document.scrollBar {
+		document.scrollBarView = view.NewView(view.InnerW-scrollBarWidth, 0, scrollBarWidth, view.InnerH, 4).
+			Fill(0, defaultScrollBarBgColor, display.Black).
+			DrawVLine(0, 0, view.InnerH, 1, display.Black).
+			Update()
+		document.scrollBarView.InnerX += 1
+		document.scrollBarView.InnerW -= 1
+		views = append(views, document.scrollBarView)
+	}
+	document.view.SetCursor(document.view.InnerX+document.view.TextArea.MarginX, document.view.InnerY+document.view.TextArea.MarginY)
+	return views
+}
 
 func (document *Document) Type() string {
 	return "document"
 }
 
-func (document *Document) parse(text string, pp **Paragraph, pw **Element) {
+func (document *Document) Load() {
+	Debug("Loading document")
+	view := document.view
+	cursorTS = time.Now()
+	//view.SetCursor(view.InnerX+view.TextArea.MarginX+paragraphIndent, view.InnerY+view.TextArea.MarginY+paragraphSpacing)
+	view.SetCursor(0, 0)
+	//view.SetCursor(view.InnerX+view.TextArea.MarginX, view.InnerY+view.TextArea.MarginY+paragraphSpacing)
+
+	document.Words = &Element{} // create empty first element
+	// then a first paragraph pointing to that element
+	document.Paragraphs = &Paragraph{
+		firstElement: document.Words,
+		lastElement:  document.Words,
+	}
+	document.Words.paragraph = document.Paragraphs // first element should also point at first paragraph
+	document.cLine = 0
+	document.topLine = 0
+	document.bottomLine = 0
+	if document.Filename == "" {
+		document.Title = "New Document"
+		document.currentElement = document.Words
+		document.currentParagraph = document.Paragraphs
+		document.Modified = false
+		Debug("New document")
+		//view.SetCursor(view.InnerX+view.TextArea.MarginX+paragraphIndent, view.InnerY+view.TextArea.MarginY+paragraphSpacing)
+		view.SetCursor(0, 0)
+		document.Ready = true
+		return
+	}
+	var filename string
+
+	var lineScanner *bufio.Scanner
+	if document.Filetype == "asset" {
+		// internal asset read
+		filename = "assets/" + document.Filename
+		f, err := Files.Open(filename)
+		if err != nil {
+			Debug("Can't open asset [%s]: %s", document.Filename, err.Error())
+			return
+		}
+		defer func(f fs.File) {
+			err := f.Close()
+			if err != nil {
+				Debug("Can't close asset [%s]: %s", document.Filename, err.Error())
+			}
+		}(f)
+		lineScanner = bufio.NewScanner(f)
+	} else {
+		// external file read
+		filename = os.Getenv("HOME") + "/nv/" + document.Filename
+		f, err := os.Open(filename)
+		if err != nil {
+			Debug("Document open error: %s", err.Error())
+			return
+		}
+		defer func(f *os.File) {
+			err := f.Close()
+			if err != nil {
+				Debug("Document close error: %s", err.Error())
+			}
+		}(f)
+		lineScanner = bufio.NewScanner(f)
+	}
+	lineScanner.Split(bufio.ScanLines)
+	document.scanWords(lineScanner)
+	document.scanLines()
+	Debug("Document loaded: %s (%d paragraphs, %d words, %d lines)", document.Filename, document.pCount, document.wCount, document.lCount)
+	document.Ready = true
+}
+
+func (document *Document) scanWords(lineScanner *bufio.Scanner) {
+	p := document.Paragraphs
+	w := document.Words
+	document.cCount = 0
+	start := true
+	for lineScanner.Scan() {
+		if !start {
+			p.next = &Paragraph{
+				prev: p,
+			}
+			p = p.next
+			w = &Element{
+				paragraph: p,
+			}
+		}
+		p.firstElement = w
+		p.lastElement = w
+		paragraph := lineScanner.Text()
+		Debug("Paragraph: %s", paragraph)
+		document.cCount += document.parse(paragraph, &p, &w)
+		if len(w.before)+len(w.word)+len(w.after) > 0 {
+			//fmt.Println(w)
+			document.wCount++
+			p.lastElement = w
+		}
+		document.LastParagraph = p
+		document.pCount++
+		start = false
+	}
+	if err := lineScanner.Err(); err != nil {
+		Debug("Error scanning doc: %s", err)
+	}
+}
+
+func (document *Document) parse(text string, pp **Paragraph, pw **Element) int {
 	runeScanner := bufio.NewScanner(strings.NewReader(text))
 	runeScanner.Split(bufio.ScanRunes)
-	quoteMode := int32(0)
+	//quoteMode := int32(0)
+	cCount := 0
 	for runeScanner.Scan() {
 		w := *pw
 		p := *pp
@@ -111,7 +274,8 @@ func (document *Document) parse(text string, pp **Paragraph, pw **Element) {
 				// do nothing
 			case '\n':
 				if string(w.before)+string(w.word)+string(w.after) != "" {
-					fmt.Println(w)
+					//fmt.Println(w)
+					w.paragraph = p
 					p = &Paragraph{
 						prev: p,
 						next: p.next,
@@ -129,7 +293,8 @@ func (document *Document) parse(text string, pp **Paragraph, pw **Element) {
 				}
 			case ' ':
 				if string(w.before)+string(w.word)+string(w.after) != "" {
-					fmt.Println(w)
+					//fmt.Println(w)
+					w.paragraph = p
 					w.next = &Element{
 						prev:      w,
 						paragraph: p,
@@ -138,9 +303,10 @@ func (document *Document) parse(text string, pp **Paragraph, pw **Element) {
 					document.wCount++
 					*pw = w.next
 				}
-			//case ',', '.', ':', ')', ']', '}':
+			//case ',', '.', ';', ':', ')', ']', '}':
 			//	w.after = append(w.after, rune(char))
-			//	fmt.Println(w)
+			//	//fmt.Println(w)
+			//	w.paragraph = p
 			//	w.next = &Element{
 			//		prev:      w,
 			//		paragraph: p,
@@ -148,90 +314,32 @@ func (document *Document) parse(text string, pp **Paragraph, pw **Element) {
 			//	p.lastElement = w.next
 			//	document.wCount++
 			//	*pw = w.next
-			case '-', '"':
-				if quoteMode == 0 {
-					w.before = append(w.before, rune(char))
-					quoteMode = char
-				} else {
-					w.after = append(w.after, rune(char))
-					quoteMode = 0
-				}
-			case '[', '{', '(':
-				w.before = append(w.before, rune(char))
+			//case '"':
+			//	if quoteMode == 0 {
+			//		w.before = append(w.before, rune(char))
+			//		quoteMode = char
+			//	} else {
+			//		w.after = append(w.after, rune(char))
+			//		quoteMode = 0
+			//	}
+			//case '[', '{', '(':
+			//	w.before = append(w.before, rune(char))
 			default:
+				char = filter(char)
 				w.word = append(w.word, rune(char))
 			}
 		}
+		cCount++
 	}
+	return cCount
 }
 
-func (document *Document) Load(view *display.View) {
-	Debug("Loading document")
-	document.view = view
-	cursorTS = time.Now()
-	//view.SetCursor(view.InnerX+view.TextArea.MarginX+paragraphIndent, view.InnerY+view.TextArea.MarginY+paragraphSpacing)
-	view.SetCursor(paragraphIndent, paragraphSpacing)
-	//view.SetCursor(view.InnerX+view.TextArea.MarginX, view.InnerY+view.TextArea.MarginY+paragraphSpacing)
-
-	document.Words = &Element{}
-	document.Paragraphs = &Paragraph{
-		firstElement: document.Words,
-		lastElement:  document.Words,
+func filter(char rune) rune {
+	switch char {
+	case '’': // apostrophe
+		char = '\''
 	}
-	if document.Filename == "" {
-		document.Title = "New Document"
-		document.currentElement = document.Words
-		document.currentParagraph = document.Paragraphs
-		document.Modified = false
-		Debug("New document")
-		//view.SetCursor(view.InnerX+view.TextArea.MarginX+paragraphIndent, view.InnerY+view.TextArea.MarginY+paragraphSpacing)
-		view.SetCursor(paragraphIndent, paragraphSpacing)
-		document.Ready = true
-		return
-	}
-	var filename string
-	if document.Filename[0] == '.' {
-		filename = "assets/" + document.Filename
-	} else {
-		filename = os.Getenv("HOME") + "/" + document.Filename
-	}
-	f, err := os.Open(filename)
-	if err != nil {
-		Debug("Document open error: %s", err.Error())
-		return
-	}
-	defer f.Close()
-	lineScanner := bufio.NewScanner(f)
-	lineScanner.Split(bufio.ScanLines)
-	p := document.Paragraphs
-	w := document.Words
-	start := true
-	for lineScanner.Scan() {
-		if !start {
-			p.next = &Paragraph{
-				prev: p,
-			}
-			p = p.next
-			w = &Element{
-				paragraph: p,
-			}
-		}
-		p.firstElement = w
-		p.lastElement = w
-		paragraph := lineScanner.Text()
-		Debug("Paragraph: %s", paragraph)
-		document.parse(paragraph, &p, &w)
-		if len(w.before)+len(w.word)+len(w.after) > 0 {
-			fmt.Println(w)
-			document.wCount++
-			p.lastElement = w
-		}
-		document.LastParagraph = p
-		document.pCount++
-		start = false
-	}
-	Debug("Document loaded: %s (%d paragraphs, %d words)", document.Filename, document.pCount, document.wCount)
-	document.Ready = true
+	return char
 }
 
 func (document *Document) Refresh() {
@@ -245,75 +353,248 @@ func (document *Document) GetTitle() string {
 }
 
 func (document *Document) Print() {
+	Debug("Printing document")
 	view := document.view
-	y := view.InnerY + view.TextArea.MarginY
-	view.FillRectangle(0, 0, view.InnerW, view.InnerH, 0, display.White, display.Black)
-	cLine = 0
-	//outOfScreen:=false
-printLoop:
-	for p := document.Paragraphs; p != nil; p = p.next {
-		space := ""
-		_, y = view.GetCursor()
-		view.SetCursor(paragraphIndent, y+paragraphSpacing)
-		document.currentParagraph = p
-		var x, y int
-		document.currentElement = document.Words
-		for w := p.firstElement; w != nil; w = w.next {
-			color := display.Black
-			text := space + string(w.before) + string(w.word) + string(w.after)
-			x, y = view.GetCursor()
-			//Debug("%d,%d", x, y)
-			x0, y0 := x, y
-			xb, yb, _, hb := view.GetTextBounds(text, &x0, &y0)
-			//Debug("%d,%d - %d,%d,%d,%d", x, y, xb, yb, wb, hb)
-			if xb < x {
-				text = "\n" + text
-			}
-			if yb+hb > view.InnerH {
-				break printLoop
-			}
-			document.currentElement = w
-			view.Write(text, color, display.Transparent)
-			space = " "
-		}
-		view.Write("\n", display.Black, display.Transparent)
-		x, y = view.GetCursor()
-		view.SetCursor(paragraphIndent, y+paragraphSpacing)
+	//document.cLine = rand.Int() % max(1, document.lCount)
+	if document.Modified || document.RefreshNeeded {
+		view.FillRectangle(0, 0, view.InnerW, view.InnerH, 0, display.White, display.Black)
+	}
+	//cLine = document.cLine
+	var x, y int
+	y = view.InnerY
+	fontSize := 8
+	if view.TextArea.Font != nil {
+		fontSize = int(view.TextArea.Font.YAdvance)
+	}
+	maxLines := (view.InnerH - 2*view.TextArea.MarginY) / fontSize
+	var startLine int
+	if direction >= 0 { // top down
+		startLine = document.topLine
+		document.bottomLine = startLine + maxLines - 1
+	} else {
+		startLine = document.bottomLine - maxLines
+		document.topLine = startLine
+	}
+	Debug("cline=%d, topline=%d, bottomline=%d", document.cLine, document.topLine, document.bottomLine)
 
-		// new
-		//		//_, y = view.GetCursor()
-		////view.SetCursor(paragraphIndent, y+paragraphSpacing)
-		//document.currentParagraph = p
-		//x, y := paragraphIndent, paragraphSpacing
-		//document.currentElement = document.Words
-		//lines[cLine] = Elements{}
-		//for w := p.firstElement; w != nil; w = w.next {
-		//	color := display.Black
-		//	text = space + string(w.before) + string(w.word) + string(w.after)
-		//	x, y = view.GetCursor()
-		//	//Debug("%d,%d", x, y)
-		//	xb, yb, _, hb := view.GetTextBounds(text, &x, &y)
-		//	//Debug("%d,%d - %d,%d,%d,%d", x, y, xb, yb, wb, hb)
-		//	if xb < x {
-		//		//
-		//		text = "\n" + text
+	for l := startLine; l >= 0 && l < document.lCount && l < startLine+maxLines; l++ {
+		ll := document.Lines[l]
+
+		// quickly handle blank lines
+		if len(ll) == 0 {
+			y += int(view.TextArea.Font.YAdvance)
+			continue
+		}
+
+		indent := ""
+		if ll[0] == ll[0].paragraph.firstElement {
+			indent = document.paragraphIndentValue // start paragraph with an indentation
+		}
+		maxWidth := view.InnerW - 2*view.TextArea.MarginX
+		lineWidth := 0
+		wordCount := len(ll)
+		var spaceSize int
+		// calculate space size if not last line
+		text := indent
+		for _, elem := range ll {
+			text += string(elem.before) + string(elem.word) + string(elem.after)
+			view.TextArea.SetFont(getFont(elem.emphasis))
+			x0, y0 := view.InnerX, view.InnerY
+			x, y := x0, y0
+			xb, _, wb, _ := view.GetTextBounds(text, &x, &y)
+			elem.xWidth = wb + (xb - x0)
+			//Debug("%d,%d - %d,%d,%d,%d", x, y, xb, yb, wb, hb)
+			lineWidth += wb + (xb - x0)
+			spaceSize = int(math.Round(float64(maxWidth-lineWidth) / float64(wordCount)))
+			text = ""
+		}
+		if ll[wordCount-1] == ll[0].paragraph.lastElement {
+			spaceSize = 15
+		}
+		text = indent
+		x = view.InnerX
+		for _, elem := range ll {
+			text += string(elem.before) + string(elem.word) + string(elem.after)
+			view.TextArea.SetFont(getFont(elem.emphasis))
+			view.SetCursor(x, y)
+			view.Write(text, display.Black, display.Transparent)
+			x += elem.xWidth + spaceSize
+			text = ""
+		}
+		y += int(view.TextArea.Font.YAdvance)
+		//totalW := 0
+		//for i, w := range ll {
+		//	x0, y0 := 0, 0
+		//	var wb int
+		//	text:=string(w.before) + string(w.word) + string(w.after);
+		//	_, _, wb, _ = view.GetTextBounds(text, &x0, &y0)
+		//	totalW +=wb;
+		//	if totalW>view.InnerW
+		//	if i == 0 && ll[i] != ll[i].paragraph.firstElement {
+		//		space = ""
+		//	} else if i == 0 && ll[i] == ll[i].paragraph.firstElement && document.paragraphIndent {
+		//		space = document.paragraphIndentValue
 		//	}
-		//	if yb+hb > view.InnerH {
-		//		outOfScreen = true
-		//	}
-		//	lines[cLine] = append(lines[cLine], w)
+		//	line += space + string(w.before) + string(w.word) + string(w.after)
 		//	document.currentElement = w
-		//	view.SetCursor(x, y)
-		//	view.Write(text, color, display.Transparent)
-		//	space = " "
 		//}
+		////fmt.Println("line:", line)
+		//x0, y0 := view.TextArea.MarginX, y
+		//xx, yy := x0, y0
+		//var xb, yb, wb, hb int
+		//if line != "" {
+		//	xb, yb, wb, hb = view.GetTextBounds(line, &xx, &yy)
+		//}
+		//Debug("%d,%d,%d,%d - %d,%d,%d,%d", x0, y0, xx, yy, xb, yb, wb, hb)
+
+		//for i, w := range ll {
+		//	space := " "
+		//	if i == 0 && ll[i] != ll[i].paragraph.firstElement {
+		//		space = ""
+		//	} else if i == 0 && ll[i] == ll[i].paragraph.firstElement && document.paragraphIndent {
+		//		space = document.paragraphIndentValue
+		//	}
+		//	line += space + string(w.before) + string(w.word) + string(w.after)
+		//	document.currentElement = w
+		//}
+		////fmt.Println("line:", line)
+		//x0, y0 := view.TextArea.MarginX, y
+		//xx, yy := x0, y0
+		//var xb, yb, wb, hb int
+		//if line != "" {
+		//	xb, yb, wb, hb = view.GetTextBounds(line, &xx, &yy)
+		//}
+		//Debug("%d,%d,%d,%d - %d,%d,%d,%d", x0, y0, xx, yy, xb, yb, wb, hb)
 		//
-		//x, y = view.GetCursor()
-		//view.SetCursor(paragraphIndent, y+paragraphSpacing)
-		////view.Write("\n", display.Black, display.Transparent)
+		////view.SetCursor(x0-(x-x0), y0)
+		////w := view.InnerW - 2*view.TextArea.MarginX
+		////h := int(view.TextArea.Font.YAdvance)
+		////characterView := view.NewView(x0, y0, w, h, 4)
+		////characterView.Fill(0, display.White, display.Black)
+		////if line != "" {
+		////	characterView.SetTextArea(view.TextArea.Font, 0, 0).
+		////		SetCursor(x0, y0-yb).
+		////		Write(line, display.Black, display.White)
+		////}
+		////view.CopyPixels(x0, y0, characterView, 0, 0, w, h)
+		////characterView.Update()
+		//
+		//view.SetCursor(x, y-view.TextArea.MarginY)
+		//view.Write(line, display.Black, display.Transparent)
+		//y += int(view.TextArea.Font.YAdvance)
+	}
+	view.Update()
+
+	// update scrollbar
+	if document.scrollBar {
+		Debug("printing scrollbar")
+		scrollBarView := document.scrollBarView
+		if document.lCount == 0 {
+			// full bar
+			scrollBarView.FillRectangle(0, 0, scrollBarView.InnerW, scrollBarView.InnerH, 0, defaultScrollBarColor, display.Black)
+		} else {
+			// 2 or 3 segments
+			if document.topLine > 0 {
+				scrollBarView.FillRectangle(0, 0, scrollBarView.InnerW, document.topLine*scrollBarView.InnerH/document.lCount, 0, defaultScrollBarBgColor, display.White)
+			}
+			h := maxLines
+			if maxLines+document.topLine > document.lCount {
+				h = document.lCount - document.topLine
+			}
+			scrollBarView.FillRectangle(0, document.topLine*scrollBarView.InnerH/document.lCount, scrollBarView.InnerW, scrollBarView.InnerH*h/document.lCount, 0, defaultScrollBarColor, display.White)
+			if document.topLine+maxLines < document.lCount {
+				scrollBarView.FillRectangle(0, scrollBarView.InnerH*(document.topLine+maxLines)/document.lCount, scrollBarView.InnerW, scrollBarView.InnerH*(document.lCount-document.topLine-maxLines)/document.lCount, 0, defaultScrollBarBgColor, display.White)
+			}
+		}
+		scrollBarView.Update()
 	}
 }
-func (document *Document) BackSpace() {
+
+func getFont(emphasis Emphasis) *fonts.GfxFont {
+	switch Emphasis(rand2.Int()) % 8 {
+	case Bold:
+		return boldFont
+	case Italic:
+		return italicFont
+	case Bold | Italic:
+		return boldItalicFont
+	default:
+		return regularFont
+	}
+}
+
+func (document *Document) scanLines() {
+	view := document.view
+
+	cLine := 0
+	document.Lines = make(map[int]Elements, 20000)
+	document.Lines[cLine] = Elements{}
+
+	for p := document.Paragraphs; p != nil; p = p.next {
+
+		indent := ""
+		if document.paragraphIndent {
+			indent = document.paragraphIndentValue // start paragraph with an indentation
+		}
+		maxWidth := view.InnerW - 2*view.TextArea.MarginX
+		for nElem := p.firstElement; nElem != nil; {
+			lineWidth := 0
+			wordCount := 0
+			elem := nElem
+			for ; elem != nil; elem = elem.next {
+				text := indent + string(elem.before) + string(elem.word) + string(elem.after)
+				view.TextArea.SetFont(getFont(elem.emphasis))
+				x0, y0 := view.InnerX, view.InnerY
+				x, y := x0, y0
+				xb, _, wb, _ := view.GetTextBounds(text, &x, &y)
+				//Debug("%d,%d - %d,%d,%d,%d", x, y, xb, yb, wb, hb)
+				lineWidth += wb + (xb - x0)
+				spaceSize := 15
+				if wordCount > 0 {
+					spaceSize = int(math.Round(float64(maxWidth-lineWidth) / float64(wordCount)))
+				}
+				if lineWidth >= maxWidth || spaceSize < 15 {
+					break
+				}
+			}
+			for ww := nElem; ww != nil && ww != elem; ww = ww.next {
+				document.Lines[cLine] = append(document.Lines[cLine], ww)
+			}
+			cLine++
+			nElem = elem
+		}
+
+		//for w := p.firstElement; w != nil; w = w.next {
+		//	text := string(w.before) + string(w.word) + string(w.after)
+		//	x, y = view.GetCursor()
+		//	x0, y0 := x, y
+		//	//Debug("%d,%d", x, y)
+		//	_, _, wb, _ := view.GetTextBounds(line+space+text, &x0, &y0)
+		//	//Debug("%d,%d - %d,%d,%d,%d", x, y, xb, yb, wb, hb)
+		//	space = " "
+		//	if y != y0 || wb >= view.InnerW-2*view.TextArea.MarginX { // line wrapped should print
+		//		//fmt.Printf("%d: [%s]\n", cLine, line)
+		//		line = "" // continuation lines don't start with a space indentation
+		//		space = ""
+		//		cLine++
+		//		//x = 0
+		//	}
+		//	line += space + text
+		//	document.Lines[cLine] = append(document.Lines[cLine], w)
+		//	document.currentElement = w
+		//	view.SetCursor(x, y)
+		//}
+		//fmt.Printf("%d: [%s]\n", cLine, line)
+		if document.paragraphSpacing {
+			document.Lines[cLine] = Elements{}
+			cLine++
+		}
+	}
+	document.lCount = cLine
+	document.cLine = 0
+}
+
+func (document *Document) BackSpace(metaKeys uint16) {
 	keyTS = time.Now()
 	cursorTS = keyTS
 	document.forceCursor(false)
@@ -406,20 +687,66 @@ func (document *Document) Editor(event *input.KeyEvent) {
 			return
 		}
 
-		keyTS = time.Now()
-		cursorTS = time.Now()
 		document.forceCursor(false)
+
+		fontSize := 8
+		if view.TextArea.Font != nil {
+			fontSize = int(view.TextArea.Font.YAdvance)
+		}
+		maxLines := (view.InnerH - 2*view.TextArea.MarginY) / fontSize
 		if event.Char == 0 {
 			switch event.KeyName {
 			case "KEY_BACKSPACE":
 				// still in typing buffer
-				if charCount > 0 {
+				if charCount > 0 && event.MetaKeys == 0 {
 					typedChars = typedChars[:len(typedChars)-1]
 					charCount--
 					return
 				}
 				// already printed
-				document.BackSpace()
+				document.BackSpace(event.MetaKeys)
+				keyTS = time.Now()
+				cursorTS = time.Now()
+				return
+			case "KEY_UP":
+				if document.cLine == 0 {
+					return
+				}
+				m := event.MetaKeys
+				if m == 0 {
+					document.cLine--
+				} else if m&input.Shift != 0 {
+					document.cLine -= (document.cLine - document.topLine) + maxLines
+				} else if m&input.Ctrl != 0 {
+					document.cLine = 0
+				}
+				if document.cLine < 0 {
+					document.cLine = 0
+				}
+				movingKeyCount++
+				document.RefreshNeeded = true
+				document.checkRefresh()
+				keyTS = time.Now()
+				cursorTS = time.Now()
+				return
+			case "KEY_DOWN":
+				if document.cLine > document.lCount-1 {
+					return
+				}
+				m := event.MetaKeys
+				if m == 0 {
+					document.cLine++
+				} else if m&input.Shift != 0 {
+					document.cLine += (document.bottomLine - document.cLine) + maxLines
+				} else if m&input.Ctrl != 0 {
+					document.cLine = document.lCount - 1
+				}
+				if document.cLine >= document.lCount {
+					document.cLine = document.lCount - 1
+				}
+				movingKeyCount++
+				document.RefreshNeeded = true
+				document.checkRefresh()
 				keyTS = time.Now()
 				cursorTS = time.Now()
 				return
@@ -428,14 +755,17 @@ func (document *Document) Editor(event *input.KeyEvent) {
 			}
 		}
 
-		if cursorOn {
-			document.forceCursor(false)
-		}
+		//if cursorOn {
+		//	document.forceCursor(false)
+		//}
 
 		elapsed := time.Since(keyTS)
 		typedChars += string(event.Char)
+		keyTS = time.Now()
+		cursorTS = time.Now()
+
 		//Debug("elapsed: %d, charCount: %d", elapsed, charCount)
-		if elapsed.Milliseconds() < 70 && charCount < 5 {
+		if elapsed < typingBufferMaxDelay && charCount < 5 {
 			charCount++
 			if event.Char != '\n' {
 				return
@@ -443,6 +773,12 @@ func (document *Document) Editor(event *input.KeyEvent) {
 		}
 	}
 
+	document.checkRefresh()
+	if len(typedChars) == 0 {
+		//cursorTS = time.Now()
+		//keyTS = time.Now()
+		return
+	}
 	document.parse(typedChars, &document.currentParagraph, &document.currentElement)
 
 	lineSplit := strings.Split(typedChars, "\n")
@@ -470,7 +806,7 @@ func (document *Document) Editor(event *input.KeyEvent) {
 		if len(lineSplit) > 1 {
 			//view.WriteChar('\n', display.Black, display.Transparent)
 			x, y = view.GetCursor()
-			view.SetCursor(paragraphIndent, y0+paragraphSpacing)
+			view.SetCursor(0, y0)
 		}
 	}
 	//paragraphNum := len(document.Paragraphs) - 1
@@ -478,12 +814,33 @@ func (document *Document) Editor(event *input.KeyEvent) {
 
 	typedChars = ""
 	charCount = 0
-	cursorTS = time.Now()
-	keyTS = time.Now()
+	//cursorTS = time.Now()
+	//keyTS = time.Now()
+}
+
+func (document *Document) checkRefresh() {
+	elapsed := time.Since(keyTS)
+	if elapsed < typingBufferMaxDelay || movingKeyCount < 3 {
+		movingKeyCount++
+		return
+	}
+	Debug("check Refreshing, cline=%d,top=%d,bottom=%d", document.cLine, document.topLine, document.bottomLine)
+	// refresh at least one line (top or bottom if necessary)
+	if document.cLine < document.topLine {
+		document.topLine = document.cLine
+		direction = 1 // top-down
+		document.Print()
+	} else if document.cLine > document.bottomLine {
+		document.bottomLine = document.cLine
+		direction = -1 // down-top
+		document.Print()
+	}
+	movingKeyCount = 0
+	document.RefreshNeeded = false
 }
 
 func (document *Document) ToggleCursor() {
-	//elapsed := time.Now().Sub(cursorTS)
+	elapsed := time.Now().Sub(cursorTS)
 	keyElapsed := time.Now().Sub(keyTS)
 
 	// check if we need to print something...
@@ -492,16 +849,17 @@ func (document *Document) ToggleCursor() {
 	}
 
 	// handle possible different durations for cursor on and off
-	//if ((cursorOn && elapsed.Milliseconds() > cursorOnDuration) ||
-	//	(!cursorOn && elapsed.Milliseconds() > cursorOffDuration)) &&
-	//	keyElapsed.Milliseconds() > cursorRestartDelay {
-	if keyElapsed.Milliseconds() > cursorRestartDelay {
+	if ((cursorOn && elapsed.Milliseconds() > cursorOnDuration) ||
+		(!cursorOn && elapsed.Milliseconds() > cursorOffDuration)) &&
+		keyElapsed.Milliseconds() > cursorRestartDelay {
+		//if keyElapsed.Milliseconds() > cursorRestartDelay {
 		document.forceCursor(true)
 	}
 }
 
 func (document *Document) forceCursor(on bool) {
 	view := document.view
+
 	x, y := view.GetCursor()
 	height := int(view.TextArea.Font.YAdvance) - 1
 	if (on && !cursorOn) || (!on && cursorOn) {

@@ -9,5 +9,5 @@ require (
 
 require (
 	github.com/peergum/go-rpio/v4 v4.0.0-20240502133125-d1c231628b14 // indirect
-	golang.org/x/sys v0.4.0 // indirect
+	golang.org/x/sys v0.17.0 // indirect
 )

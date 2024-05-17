@@ -28,7 +28,7 @@ var (
 )
 
 func init() {
-	flag.BoolVar(&inputDebug, "input", false, "debug mode for input")
+	flag.BoolVar(&inputDebug, "di", false, "debug mode for input")
 }
 
 func Debug(format string, args ...interface{}) {

@@ -46,6 +46,7 @@ type View struct {
 	TextArea                       TextArea
 	content                        Content
 	Xb, Yb, Wb, Hb                 int
+	Views                          []*View
 }
 
 const (
@@ -172,7 +173,7 @@ func (view *View) DrawLine(x0, y0, x1, y1 int, stroke int, fgColor it8951.Color)
 
 func (view *View) Fill(stroke int, bgColor it8951.Color, fgColor it8951.Color) *View {
 	Debug("Fill view")
-	view.FillRectangle(0, 0, view.W, view.H, stroke, bgColor, fgColor)
+	view.FillRectangle(0, 0, view.InnerW, view.InnerH, stroke, bgColor, fgColor)
 	view.BgColor = uint16(bgColor)
 	return view
 }
@@ -353,11 +354,11 @@ func LoadBitmap(name string, bpp int) (View, error) {
 		Debug("Not a bitmap")
 		return view, errors.New("not a bitmap")
 	}
-	if (bmp[26] | (bmp[27] << 8)) != 1 {
+	if (uint16(bmp[26]) | (uint16(bmp[27]) << 8)) != 1 {
 		Debug("Not 1 color plane")
 		return view, errors.New("not 1 color plane")
 	}
-	if (bmp[28] | (bmp[29] << 8)) != 16 {
+	if (uint16(bmp[28]) | (uint16(bmp[29]) << 8)) != 16 {
 		Debug("Not 16 bits")
 		return view, errors.New("not 16 bits")
 	}
@@ -425,8 +426,8 @@ func (buffer *Buffer) writePixel(x, y int, fgColor uint16) {
 	ppw := 16 / bpp
 
 	if y-buffer.Y < 0 || y-buffer.Y >= buffer.wh || (x-buffer.X)/ppw < 0 || (x-buffer.X)/ppw >= buffer.ww {
-		Debug("error writing pixel (%d,%d) in buffer(%d,%d,%d,%d)",
-			x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)
+		//Debug("error writing pixel (%d,%d) in buffer(%d,%d,%d,%d)",
+		//	x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)
 		return
 	}
 	color := colorToBpp(fgColor, bpp) << (bpp * ((x - buffer.X) % ppw))
@@ -442,9 +443,16 @@ func (buffer *Buffer) readPixel(x, y int) (fgColor uint16) {
 				x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)
 		}
 	}()
-	//Debug("writing pixel (%d,%d) -> (%d,%d)", x, y, x-buffer.X, y-buffer.Y)
 	bpp := buffer.bpp
 	ppw := 16 / bpp
+
+	if y-buffer.Y < 0 || y-buffer.Y >= buffer.wh || (x-buffer.X)/ppw < 0 || (x-buffer.X)/ppw >= buffer.ww {
+		//Debug("error writing pixel (%d,%d) in buffer(%d,%d,%d,%d)",
+		//	x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)
+		return
+	}
+
+	//Debug("writing pixel (%d,%d) -> (%d,%d)", x, y, x-buffer.X, y-buffer.Y)
 	//if y-buffer.Y < 0 || y-buffer.Y >= buffer.wh || (x-buffer.X)/ppw < 0 || (x-buffer.X)/ppw >= buffer.ww {
 	//	return
 	//}
@@ -514,4 +522,12 @@ func pixelFormat(bpp int) it8951.PixelMode {
 		return it8951.BPP8
 	}
 	return it8951.BPP8
+}
+
+func (view *View) CopyPixels(dx, dy int, source *View, sx, sy, sw, sh int) {
+	for x := 0; x < sw; x++ {
+		for y := 0; y < sh; y++ {
+			view.buffer.writePixel(dx+x, dy+y, source.buffer.readPixel(sx+x, sy+y))
+		}
+	}
 }

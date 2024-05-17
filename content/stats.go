@@ -41,15 +41,19 @@ var (
 	fields = make([]FieldDefinition, 10)
 )
 
-func init() {
+func (stats *Stats) Init(view *display.View) (views []*display.View) {
+	stats.view = view
+	view.Fill(0, display.Gray14, display.Black).
+		SetTextArea(&fonts.CourierStd20pt8b, 10, 10).
+		Update()
+	return append(views, view)
 }
 
 func (stats *Stats) Type() string {
 	return "stats"
 }
 
-func (stats *Stats) Load(view *display.View) {
-	stats.view = view
+func (stats *Stats) Load() {
 	fields = Fields{
 		FieldDefinition{"Title", "%s", stats.Title},
 		FieldDefinition{"File", "%s", stats.Filename},
@@ -86,7 +90,7 @@ func (stats *Stats) Print() {
 	}
 	labelWidth += 2 * view.TextArea.MarginX
 	y := 0
-	view.FillRectangle(labelWidth, 0, view.InnerW-labelWidth, view.InnerH, 0, 0xf, 0x0)
+	view.FillRectangle(labelWidth, 0, view.InnerW-labelWidth, view.InnerH, 0, display.White, display.Black)
 	view.DrawVLine(labelWidth, 0, view.InnerH, 1, 0x7)
 	for _, field := range fields {
 		view.TextArea.SetFont(labelFont)
@@ -95,4 +99,5 @@ func (stats *Stats) Print() {
 		view.WriteAt(labelWidth+view.TextArea.MarginX, y, fmt.Sprintf(field.format, field.value), display.Black, display.Transparent)
 		y += int(view.TextArea.Font.YAdvance)
 	}
+	view.Update()
 }

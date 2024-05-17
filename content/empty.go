@@ -23,23 +23,36 @@ import (
 	"nv/display/fonts-go"
 )
 
-const (
-	cursorWidth                 = 2
-	cursorHeight                = 40
-	cursorOnDuration            = 500 // 1s
-	cursorOffDuration           = 500 // 1s
-	cursorRestartDelay          = 300
-	defaultParagraphIndent      = true
-	defaultParagraphSpacing     = true
-	defaultParagraphIndentValue = "·  "
-	defaultScrollBarWidth       = 20
-	defaultScrollBarBgColor     = display.Gray14
-	defaultScrollBarColor       = display.Gray1
-)
+type Empty struct {
+	*display.View
+}
 
-var (
-	regularFont    = &fonts.UbuntuSans_Regular20pt8b
-	boldFont       = &fonts.UbuntuSans_Bold20pt8b
-	italicFont     = &fonts.UbuntuSans_Italic20pt8b
-	boldItalicFont = &fonts.UbuntuSans_BoldItalic20pt8b
-)
+func (empty *Empty) Init(view *display.View) (views []*display.View) {
+	empty.View = view
+	view.Fill(0, display.White, display.Black).
+		SetTextArea(&fonts.CourierStd20pt8b, 10, 10).
+		WriteCenteredIn(0, 0, view.InnerW, view.InnerH, "Ready when you are.", display.Black, display.White).
+		Update()
+	return append(views, view)
+}
+
+func (empty *Empty) Type() string {
+	return "empty"
+}
+
+func (empty *Empty) Load() {
+}
+
+func (empty *Empty) Refresh() {
+}
+
+func (empty *Empty) Save() {
+}
+
+func (empty *Empty) GetTitle() string {
+	return "Let's Do This!"
+}
+
+func (empty *Empty) Print() {
+
+}

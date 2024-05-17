@@ -60,15 +60,16 @@ type EventCode struct {
 }
 
 type KeyEvent struct {
-	Sec        uint64
-	USec       uint64
-	Type       int
-	Keycode    int
-	Value      rune
-	TypeName   string
-	KeyName    string
-	Char       rune
-	SpecialKey bool
+	Sec         uint64
+	USec        uint64
+	Type        int
+	Keycode     int
+	Value       rune
+	TypeName    string
+	KeyName     string
+	Char        rune
+	SpecialKeys bool
+	MetaKeys    uint16
 }
 
 const (
@@ -100,7 +101,7 @@ var (
 	eventChannel    <-chan bool                 // receives termination event for all keyboards
 	keyboardChannel = make(chan *Keyboard, 5)   // informs about new keyboards
 	keyChannel      = make(chan *KeyEvent, 100) // informs key changes
-	metaKey         uint16
+	metakeys        uint16
 	keyboards       Keyboards
 )
 
@@ -112,8 +113,8 @@ func KeyboardChannel() <-chan *Keyboard {
 	return keyboardChannel
 }
 
-func Metakey() uint16 {
-	return metaKey
+func Metakeys() uint16 {
+	return metakeys
 }
 
 func (keyboard *Keyboard) ReadKeyboard() error {
@@ -123,7 +124,12 @@ func (keyboard *Keyboard) ReadKeyboard() error {
 		log.Fatal(err)
 		return err
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+
+		}
+	}(file)
 	reader := bufio.NewReader(file)
 	buffer := make([]byte, 24)
 	done := false
@@ -165,7 +171,6 @@ func (keyboard *Keyboard) ReadKeyboard() error {
 				//Debug("%v", keyboard)
 
 				specialKey := None
-				keyEvent.SpecialKey = false
 				switch keyEvent.KeyName {
 				case "KEY_SHIFT", "KEY_LEFTSHIFT", "KEY_RIGHTSHIFT":
 					specialKey = Shift
@@ -179,15 +184,16 @@ func (keyboard *Keyboard) ReadKeyboard() error {
 					specialKey = CapsLock
 				}
 				if specialKey != None {
-					keyEvent.SpecialKey = true
+					keyEvent.SpecialKeys = true
 					if keyEvent.Value == 0 {
-						metaKey &= ^specialKey
+						metakeys &= ^specialKey
 					} else {
-						metaKey |= specialKey
+						metakeys |= specialKey
 					}
 				}
+				keyEvent.MetaKeys = metakeys
 				if keymapEnUS[keyEvent.KeyName] != nil {
-					keyEvent.Char = keymapEnUS[keyEvent.KeyName][metaKey]
+					keyEvent.Char = keymapEnUS[keyEvent.KeyName][metakeys]
 				}
 				keyChannel <- &keyEvent
 				break
@@ -231,6 +237,9 @@ func CheckKeyboard(filename string) {
 				if strings.Contains(text, "ID_INPUT=1") {
 					// this should tell input is ready
 					ready = true
+				}
+				if strings.Contains(text, "hdmi-event") {
+					isKeys = false
 				}
 			}
 			// wait until input is seen as valid...
@@ -283,7 +292,9 @@ func CheckKeyboard(filename string) {
 							kbd.Events[typeNum] = eventType
 						}
 					} else if strings.Contains(text, "interrupt to exit") {
-						cmd.Process.Kill()
+						if cmd.Process.Kill() != nil {
+							Debug("Error killing process")
+						}
 					}
 				}
 			} else {
@@ -305,7 +316,7 @@ func Search(mainEventChannel <-chan bool) {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		fmt.Println("ERROR", err)
+		fmt.Println("Keyboard watcher error: %s", err)
 	}
 	defer watcher.Close()
 
@@ -329,6 +340,12 @@ func Search(mainEventChannel <-chan bool) {
 		}
 		CheckKeyboard("/dev/input/" + file.Name())
 	}
+	if len(keyboards) == 0 {
+		keyboardChannel <- &Keyboard{
+			File: "none",
+		}
+	}
+SearchLoop:
 	for {
 		select {
 		case event := <-watcher.Events:
@@ -344,8 +361,15 @@ func Search(mainEventChannel <-chan bool) {
 					keyboards[kbd].doneChannel <- true
 					keyboards = slices.Delete(keyboards, kbd, kbd+1)
 				}
+				if len(keyboards) == 0 {
+					keyboardChannel <- &Keyboard{
+						File: "none",
+					}
+				}
 			}
 
+		case <-mainEventChannel:
+			break SearchLoop
 		}
 	}
 	Debug("Done with input")

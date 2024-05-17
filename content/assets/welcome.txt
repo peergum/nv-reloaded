@@ -1,0 +1,5 @@
+Welcome to your new DYI device.
+This device's purpose is to allow you to write your next novel, article, or post without distractions. It provides you with the necessary tools to research, edit and send your documents to the cloud or to your email.
+To start, you can use the [Esc] key to show the Function Keys panel, and create or load your next document.
+Remember the Shift, Ctrl, Cmd/Alt and Start/Options keys, alone or combined, toggle different sets of Function Keys.
+Enjoy your writing...

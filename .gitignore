@@ -22,8 +22,14 @@ go.work
 
 display/Fonts
 display/fontconvert/ImportedFonts
+display/fontconvert/OtherFonts
 bcm2711
 bcm2835_C_files
 
 .idea
 sync
+
+# don't prebuild binary
+nv
+.DS_Store
+

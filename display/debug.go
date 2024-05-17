@@ -25,10 +25,12 @@ import (
 
 var (
 	displayDebug bool
+	noLogo       bool
 )
 
 func init() {
-	flag.BoolVar(&displayDebug, "display", false, "debug mode for display")
+	flag.BoolVar(&displayDebug, "dd", false, "debug mode for display")
+	flag.BoolVar(&noLogo, "nl", false, "skip logo on start")
 }
 
 func Debug(format string, args ...interface{}) {

@@ -24,8 +24,9 @@ import (
 )
 
 type Content interface {
+	Init(*View) []*View
 	GetTitle() string
-	Load(*View)
+	Load()
 	Refresh()
 	Save()
 	Print()
@@ -56,9 +57,10 @@ type ScreenView struct {
 }
 
 const (
-	titleBorder   = 2
-	titleHeight   = 48
-	contentBorder = 1
+	titleBorder     = 2
+	titleHeight     = 48
+	contentBorder   = 1
+	titleBarBgColor = Gray11
 )
 
 var (
@@ -84,14 +86,18 @@ func Ppb(bpp int) int {
 	return 1
 }
 
+func (view *View) NewCenteredWindow(options WindowOptions) *Window {
+	return view.NewWindow((view.InnerW-800)/2, (view.InnerH-300)/2, 800, 300, options)
+}
+
 func (view *View) NewWindow(x, y, w, h int, options WindowOptions) *Window {
 	Debug("Create a New Window (%d,%d,%d,%d,%s)", x, y, w, h, options.Title)
 	var window Window
 	window.parent = view
 	window.WindowOptions = options
-	if window.View == nil {
-		window.View = view.NewView(x, y, w, h, 4)
-	}
+	//if window.View == nil {
+	window.View = view.NewView(x, y, w, h, 4)
+	//}
 	// prepare for first appearance
 	window.updated = true
 	window.Show()
@@ -104,6 +110,7 @@ func (window *Window) Show() {
 	window.InnerW = window.W
 	window.InnerH = window.H
 	if window.updated {
+		//window.View.Rectangle(window.X, window.Y, window.W, window.H, window.Border, window.BorderColor).Update()
 		window.View.Fill(window.Border, window.WindowOptions.BgColor, window.BorderColor).Update()
 	}
 	window.InnerX = window.X + window.Border
@@ -111,18 +118,19 @@ func (window *Window) Show() {
 	window.InnerW = window.W - 2*window.Border
 	window.InnerH = window.H - 2*window.Border
 	if window.updated {
-		titleBarHeight := 0
 		if window.WindowOptions.TitleBar {
-			titleBarHeight = titleHeight + 2*titleBorder
-			window.titleView = window.NewView(0, 0, window.InnerW, titleBarHeight, 4)
-			window.RefreshTitleBar()
+			titleBarHeight := 0
+			titleBarHeight = titleHeight + titleBorder
+			window.titleView = window.NewView(0, 0, window.InnerW, titleBarHeight, 4).
+				SetTextArea(&fonts.SF_Compact_Display_Black20pt8b, 0, 0)
 			window.InnerY += titleBarHeight
 			window.InnerH -= titleBarHeight
+			window.RefreshTitleBar()
 		}
 		it8951.WaitForDisplayReady()
 		if window.content != nil {
-			window.content.Print()
-			window.Update()
+			window.content.Print() // updates content on screen
+			//window.Update()
 		}
 	}
 	window.updated = false
@@ -139,11 +147,15 @@ func (window *Window) Hide() {
 	//// create a temporary new view to restore parent view partially faster
 	view := Screen.NewView(window.X, window.Y, window.W, window.H, 4)
 
-	_ = view
-	////// copy content from parent
-	for y := 0; y < window.H; y++ {
-		for x := 0; x < window.W; x++ {
-			view.buffer.writePixel(view.X+x, view.Y+y, window.parent.buffer.readPixel(window.X+x, window.Y+y))
+	for _, parentView := range window.parent.Views {
+		////// copy content from parent
+		for y := 0; y < window.H; y++ {
+			for x := 0; x < window.W; x++ {
+				if window.X+x >= parentView.X && window.X+x < parentView.X+parentView.W &&
+					window.Y+y >= parentView.Y && window.Y+y < parentView.Y+parentView.H {
+					view.buffer.writePixel(view.X+x, view.Y+y, parentView.buffer.readPixel(window.X+x, window.Y+y))
+				}
+			}
 		}
 	}
 
@@ -160,11 +172,10 @@ func (window *Window) RefreshTitleBar() {
 	if !window.WindowOptions.TitleBar {
 		return
 	}
-	window.titleView.Fill(0, 0xe, 0x0)
+	window.titleView.Fill(0, titleBarBgColor, Black)
 	window.titleView.
 		DrawHLine(0, window.titleView.H-titleBorder, window.titleView.W, titleBorder, 0x0)
-	window.titleView.SetTextArea(&fonts.SF_Compact_Display_Black20pt8b, 0, 0).
-		WriteVCenteredAt(20, window.Title, 0x0, 0xe).
+	window.titleView.WriteVCenteredAt(20, window.Title, 0x0, titleBarBgColor).
 		Update()
 }
 
@@ -174,27 +185,23 @@ func (window *Window) SetContent(content Content, mx, my int) *Window {
 	window.content = content
 	window.Title = content.GetTitle()
 	window.RefreshTitleBar()
-	window.View.SetTextArea(&fonts.SF_Pro_Text_Regular20pt8b, mx, my).
-		SetCursor(window.View.InnerX+window.View.TextArea.MarginX, window.View.InnerY+window.View.TextArea.MarginY)
+	contentViews := content.Init(window.View)
+	window.View.Views = append(window.View.Views, contentViews...)
 	return window
 }
 
 func (window *Window) GetContentType() string {
+	if window.content == nil {
+		return ""
+	}
 	return window.content.Type()
 }
-
-//func (window Window) SetTitle(title string) Window {
-//	Debug("Set Window Title to %s", title)
-//	window.title = title
-//	// window.RefreshTitle()
-//	return window
-//}
 
 // Load initialize window content and returns window for chaining purpose
 func (window *Window) Load() *Window {
 	Debug("Load Window")
 	if window.content != nil {
-		window.content.Load(window.View)
+		window.content.Load()
 		//window.updated = true
 		window.content.Print()
 	}

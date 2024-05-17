@@ -7,6 +7,8 @@ all: sync run
 sync: clean
 	./sync
 
+build: sync install
+
 clean:
 	rm -f nv
 
@@ -28,10 +30,10 @@ stop:
 	sudo systemctl stop nv
 
 run: stop install
-	./nv -debug -doc -display -input
+	./nv -d -dd -dc -di
 
 debug: nv
-	sudo gdb --args ./nv -debug -doc -display -input
+	sudo gdb --args ./nv -d -dd -dc -di
 
 fonts: display/fontconvert/fontconvert2go
 	if [ -f display/fontconvert/fontconvert2go ]; then rm display/fontconvert/fontconvert2go; fi

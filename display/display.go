@@ -59,7 +59,9 @@ func InitScreen() {
 		},
 		windows: make([]Window, 3),
 	}
-	//ShowLogo()
+	if !noLogo {
+		ShowLogo()
+	}
 }
 
 func ShowLogo() {

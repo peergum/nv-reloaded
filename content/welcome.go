@@ -27,23 +27,28 @@ type Welcome struct {
 	*Document
 }
 
-var ()
-
-func init() {
+func (welcome *Welcome) Init(view *display.View) (views []*display.View) {
+	welcome.Document = &Document{
+		Filename:             "welcome.txt",
+		Filetype:             "asset",
+		Title:                "Welcome",
+		paragraphIndent:      true,
+		paragraphIndentValue: "   ",
+		paragraphSpacing:     true,
+	}
+	welcome.mx = 100
+	welcome.my = 100
+	welcome.Document.Init(view)
+	welcome.Document.view.SetTextArea(&fonts.Montserrat_Medium20pt8b, 100, 100).Update()
+	return append(views, welcome.Document.view)
 }
 
 func (welcome *Welcome) Type() string {
 	return "welcome"
 }
 
-func (welcome *Welcome) Load(view *display.View) {
-	welcome.Document = &Document{
-		Filename: ".welcome.txt",
-		Title:    "Welcome",
-	}
-	view.SetTextArea(&fonts.Montserrat_Medium20pt8b, 100, 100).Update()
-	welcome.Document.Load(view)
-	welcome.view.Rectangle(100, 100, view.W-200, view.H-200, 1, display.Black)
+func (welcome *Welcome) Load() {
+	welcome.Document.Load()
 }
 
 func (welcome *Welcome) Refresh() {
@@ -59,7 +64,7 @@ func (welcome *Welcome) GetTitle() string {
 func (welcome *Welcome) Print() {
 	Debug("Loading welcome")
 	view := welcome.view
-	view.FillRectangle(100, 100, view.InnerW-200, view.InnerH-200, 10, display.Gray13, display.Black)
+	view.Rectangle(50, 50, view.InnerW-100, view.InnerH-100, 1, display.Black)
 	welcome.Document.Print()
 	//view := welcome.view
 	//var text string
