@@ -109,6 +109,9 @@ func (view *View) GetCursor() (x, y int) {
 func (view *View) drawChar(x, y int, c rune,
 	fg uint16, bg uint16, sizeX,
 	sizeY int) {
+	if bg == 0xffff {
+		bg = view.TextArea.BgColor
+	}
 	//Debug("drawChar (%d,%d) -> %c in buffer (%d,%d,%d,%d)",
 	//	x, y, c, view.buffer.X, view.buffer.Y, view.buffer.ww, view.buffer.wh)
 	if view.TextArea.Font == nil { // 'Classic' built-in font
@@ -136,7 +139,7 @@ func (view *View) drawChar(x, y int, c rune,
 							view.buffer.writeFillRectangle(view.InnerX+view.TextArea.MarginX+xx, view.InnerY+view.TextArea.MarginY+yy, sizeX, sizeY,
 								fg)
 						}
-					} else if bg != 0xffff { // transparent color
+					} else {
 						if sizeX == 1 && sizeY == 1 {
 							view.buffer.writePixel(view.InnerX+view.TextArea.MarginX+xx, view.InnerY+view.TextArea.MarginY+yy, bg)
 						} else {
@@ -302,12 +305,6 @@ func (view *View) Write(text string, color it8951.Color, bgColor it8951.Color) {
 }
 
 func (view *View) WriteAt(x, y int, text string, color it8951.Color, bgColor it8951.Color) *View {
-	defer func() {
-		if err := recover(); err != nil {
-			Debug("view: %v, (%d,%d), %s", view, x, y, text)
-		}
-	}()
-	//area := view.textArea
 	x0, y0 := x+0, y+0
 	view.Xb, view.Yb, view.Wb, view.Hb = view.GetTextBounds(text, &x0, &y0)
 	view.TextArea.CX = x + (x - view.Xb)

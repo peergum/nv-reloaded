@@ -42,11 +42,11 @@ var (
 )
 
 func (stats *Stats) Init(view *display.View) (views []*display.View) {
-	stats.view = view
-	view.Fill(0, display.Gray14, display.Black).
+	stats.view = view.NewView(0, 0, view.InnerW, view.InnerH, 4)
+	stats.view.Fill(0, display.Gray14, display.Black).
 		SetTextArea(&fonts.CourierStd20pt8b, 10, 10).
 		Update()
-	return append(views, view)
+	return append(views, stats.view)
 }
 
 func (stats *Stats) Type() string {

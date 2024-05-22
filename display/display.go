@@ -49,19 +49,24 @@ func InitScreen() {
 			InnerY: 0,
 			InnerW: int(DeviceInfo.PanelW),
 			InnerH: int(DeviceInfo.PanelH),
-			buffer: Buffer{
-				X:    0,
-				Y:    0,
-				ww:   int(DeviceInfo.PanelW / 2),
-				wh:   int(DeviceInfo.PanelH),
-				data: make(it8951.DataBuffer, int(DeviceInfo.PanelW)*int(DeviceInfo.PanelH)/2),
-			},
+			//buffer: Buffer{
+			//	X:    0,
+			//	Y:    0,
+			//	ww:   int(DeviceInfo.PanelW / 2),
+			//	wh:   int(DeviceInfo.PanelH),
+			//	data: make(it8951.DataBuffer, int(DeviceInfo.PanelW)*int(DeviceInfo.PanelH)/2),
+			//},
 		},
-		windows: make([]Window, 3),
+		Windows: make([]*Window, 0, 10),
 	}
 	if !noLogo {
 		ShowLogo()
 	}
+	Screen.setBuffer(4)
+	// the only view of Screen is itself
+	// beware of possible recursions here!
+	Screen.Views = make([]*View, 0)
+	Screen.Views = append(Screen.Views, Screen.View)
 }
 
 func ShowLogo() {

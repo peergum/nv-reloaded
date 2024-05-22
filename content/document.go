@@ -172,6 +172,7 @@ func (document *Document) Load() {
 	document.cLine = 0
 	document.topLine = 0
 	document.bottomLine = 0
+	direction = 0
 	if document.Filename == "" {
 		document.Title = "New Document"
 		document.currentElement = document.Words
@@ -203,7 +204,7 @@ func (document *Document) Load() {
 		lineScanner = bufio.NewScanner(f)
 	} else {
 		// external file read
-		filename = os.Getenv("HOME") + "/nv/" + document.Filename
+		filename = "/var/nv/" + document.Filename
 		f, err := os.Open(filename)
 		if err != nil {
 			Debug("Document open error: %s", err.Error())

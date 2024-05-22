@@ -1,11 +1,17 @@
 [Unit]
 Description=NV-Reloaded Application on %I
-DefaultDependencies=Yes
-#Requires=bluetooth.target multi-user.target
+#After=bluetooth.target usb-gadget.target
 
 [Service]
-ExecStart=/home/phil/dev/nv-go/nv -d -dd -dc -di
-#PrivateTmp=Yes
-WorkingDirectory=/home/phil
+Type=simple
+ExecStart=/usr/local/bin/nv -d -dd -dc -di
+ExecReload=kill -USR1 $MAINPID
+ExecStop=kill -TERM $MAINPID
+
+WorkingDirectory=/var/nv
+TimeoutSec=5
+KillMode=mixed
+RestartKillSignal=SIGHUP
 
 [Install]
+WantedBy=multi-user.target

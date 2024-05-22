@@ -23,22 +23,15 @@ import (
 	"nv/display/fonts-go"
 )
 
-type Content interface {
-	Init(*View) []*View
-	GetTitle() string
-	Load()
-	Refresh()
-	Save()
-	Print()
-	Type() string
-}
-
 type WindowOptions struct {
-	Title       string
-	TitleBar    bool
-	Border      int
-	BgColor     it8951.Color
-	BorderColor it8951.Color
+	Title        string
+	TitleBar     bool
+	Border       int
+	BgColor      it8951.Color
+	BorderColor  it8951.Color
+	Transparency float64 // 0 (opaque) to 1 (transparent)
+	Radius       int
+	TopRounded   bool
 }
 
 type Window struct {
@@ -53,14 +46,16 @@ type Window struct {
 
 type ScreenView struct {
 	*View
-	windows []Window
+	Windows []*Window
 }
 
 const (
-	titleBorder     = 2
-	titleHeight     = 48
-	contentBorder   = 1
-	titleBarBgColor = Gray11
+	titleBorder        = 2
+	titleHeight        = 48
+	contentBorder      = 1
+	titleBarBgColor    = Gray13
+	titleColor         = Black
+	defaultTitleRadius = 20
 )
 
 var (
@@ -92,11 +87,14 @@ func (view *View) NewCenteredWindow(options WindowOptions) *Window {
 
 func (view *View) NewWindow(x, y, w, h int, options WindowOptions) *Window {
 	Debug("Create a New Window (%d,%d,%d,%d,%s)", x, y, w, h, options.Title)
+	alertBox.CancelAlert()
 	var window Window
 	window.parent = view
 	window.WindowOptions = options
 	//if window.View == nil {
 	window.View = view.NewView(x, y, w, h, 4)
+	window.Views = make([]*View, 0)
+	window.Views = append(window.Views, window.View)
 	//}
 	// prepare for first appearance
 	window.updated = true
@@ -109,20 +107,38 @@ func (window *Window) Show() {
 	window.InnerY = window.Y
 	window.InnerW = window.W
 	window.InnerH = window.H
+	titleBarHeight := 0
+	if window.WindowOptions.TitleBar {
+		titleBarHeight = titleHeight + titleBorder
+	}
 	if window.updated {
-		//window.View.Rectangle(window.X, window.Y, window.W, window.H, window.Border, window.BorderColor).Update()
-		window.View.Fill(window.Border, window.WindowOptions.BgColor, window.BorderColor).Update()
+		if window.WindowOptions.Transparency > 0 {
+			for _, parent := range window.parent.Views {
+				window.View.CopyPixelsWithTransparency(window.X, window.Y+titleBarHeight, parent, window.X, window.Y+titleBarHeight, window.W, window.H-titleBarHeight, window.WindowOptions.Transparency, uint16(window.WindowOptions.BgColor))
+			}
+			//if window.WindowOptions.TopRounded {
+			//	window.View.TopRoundedRectangle(0, 0, window.W, window.H, window.Border, window.BorderColor, window.WindowOptions.Radius).Update()
+			//} else {
+			window.View.RoundedRectangle(0, titleBarHeight, window.W, window.H-titleBarHeight, window.Border, window.BorderColor, window.WindowOptions.Radius).Update()
+			//}
+		} else {
+			for _, parent := range window.parent.Views {
+				window.View.CopyPixels(window.X, window.Y, parent, window.X, window.Y, window.W, window.H)
+			}
+			//if window.WindowOptions.TopRounded {
+			//	window.View.FillTopRoundedRectangle(0, 0, window.W, window.H, window.Border, window.WindowOptions.BgColor, window.BorderColor, window.WindowOptions.Radius).Update()
+			//} else {
+			window.View.FillRoundedRectangle(0, titleBarHeight, window.W, window.H-titleBarHeight, window.Border, window.WindowOptions.BgColor, window.BorderColor, window.WindowOptions.Radius).Update()
+			//}
+		}
 	}
 	window.InnerX = window.X + window.Border
 	window.InnerY = window.Y + window.Border
 	window.InnerW = window.W - 2*window.Border
 	window.InnerH = window.H - 2*window.Border
+
 	if window.updated {
 		if window.WindowOptions.TitleBar {
-			titleBarHeight := 0
-			titleBarHeight = titleHeight + titleBorder
-			window.titleView = window.NewView(0, 0, window.InnerW, titleBarHeight, 4).
-				SetTextArea(&fonts.SF_Compact_Display_Black20pt8b, 0, 0)
 			window.InnerY += titleBarHeight
 			window.InnerH -= titleBarHeight
 			window.RefreshTitleBar()
@@ -149,14 +165,15 @@ func (window *Window) Hide() {
 
 	for _, parentView := range window.parent.Views {
 		////// copy content from parent
-		for y := 0; y < window.H; y++ {
-			for x := 0; x < window.W; x++ {
-				if window.X+x >= parentView.X && window.X+x < parentView.X+parentView.W &&
-					window.Y+y >= parentView.Y && window.Y+y < parentView.Y+parentView.H {
-					view.buffer.writePixel(view.X+x, view.Y+y, parentView.buffer.readPixel(window.X+x, window.Y+y))
-				}
-			}
-		}
+		view.CopyPixels(view.X, view.Y, parentView, window.X, window.Y, window.W, window.H)
+		//for y := 0; y < window.H; y++ {
+		//	for x := 0; x < window.W; x++ {
+		//		if window.X+x >= parentView.X && window.X+x < parentView.X+parentView.W &&
+		//			window.Y+y >= parentView.Y && window.Y+y < parentView.Y+parentView.H {
+		//			view.buffer.writePixel(view.X+x, view.Y+y, parentView.buffer.readPixel(window.X+x, window.Y+y))
+		//		}
+		//	}
+		//}
 	}
 
 	view.Refresh(view.X, view.Y, view.W, view.H)
@@ -172,10 +189,53 @@ func (window *Window) RefreshTitleBar() {
 	if !window.WindowOptions.TitleBar {
 		return
 	}
-	window.titleView.Fill(0, titleBarBgColor, Black)
+
+	titleBarHeight := titleHeight + titleBorder
+	window.InnerY -= titleBarHeight
+	window.InnerH += titleBarHeight
+
+	for _, parent := range window.parent.Views {
+		if parent != nil {
+			window.CopyPixels(0, 0, parent, window.X, window.Y, window.W, titleBarHeight)
+		}
+	}
+
+	window.Refresh(window.X, window.Y, window.W, titleBarHeight)
+
+	x0, y0 := 0, 0
+	window.SetTextArea(&fonts.SF_Compact_Display_Black20pt8b, 0, 0)
+	_, _, wb, _ := window.GetTextBounds(window.Title, &x0, &y0)
+	window.titleView = window.NewView(-window.Border, 0, wb+100, titleBarHeight, 4).
+		Fill(0, titleBarBgColor, Black).
+		SetTextArea(&fonts.SF_Compact_Display_Black20pt8b, 0, 0)
+
+	window.InnerY += titleBarHeight
+	window.InnerH -= titleBarHeight
+
+	// prepare area
+	//if window.WindowOptions.Transparency > 0 {
+	//	for _, parent := range window.parent.Views {
+	//		window.View.CopyPixelsWithTransparency(window.View.X, window.View.Y, parent, window.X, window.Y, window.titleView.W, window.titleView.H, window.WindowOptions.Transparency, uint16(window.WindowOptions.BgColor))
+	//	}
+	//	if window.WindowOptions.TopRounded {
+	//		window.titleView.TopRoundedRectangle(0, 0, window.titleView.W/2, window.titleView.H, window.Border, window.BorderColor, window.WindowOptions.Radius).Update()
+	//	} else {
+	//		window.titleView.RoundedRectangle(0, 0, window.titleView.W/2, window.titleView.H, window.Border, window.BorderColor, window.WindowOptions.Radius).Update()
+	//	}
+	//} else {
+
+	//if window.WindowOptions.TopRounded {
+	window.titleView.FillTopRoundedRectangle(0, 0, window.titleView.W, window.titleView.H, window.WindowOptions.Border, titleBarBgColor, window.BorderColor, defaultTitleRadius)
+	//} else {
+	//	window.titleView.FillRoundedRectangle(0, 0, window.titleView.W, window.titleView.H, window.WindowOptions.Border, window.WindowOptions.BgColor, window.BorderColor, defaultTitleRadius)
+	//}
+
+	//}
+	//window.titleView.FillTopRoundedRectangle(0, 0, window.titleView.W/2, window.titleView.H, 0, titleBarBgColor, Black, window.WindowOptions.Radius)
 	window.titleView.
-		DrawHLine(0, window.titleView.H-titleBorder, window.titleView.W, titleBorder, 0x0)
-	window.titleView.WriteVCenteredAt(20, window.Title, 0x0, titleBarBgColor).
+		DrawHLine(0, window.titleView.H-titleBorder, window.titleView.W, titleBorder, 0x0) //.
+	//DrawVLine(window.titleView.W/2-titleBorder, 0, window.titleView.H, titleBorder, 0x0)
+	window.titleView.WriteCenteredIn(0, 0, window.titleView.W, window.titleView.H, window.Title, titleColor, titleBarBgColor).
 		Update()
 }
 

@@ -31,8 +31,8 @@ const (
 	cursorRestartDelay          = 300
 	defaultParagraphIndent      = true
 	defaultParagraphSpacing     = true
-	defaultParagraphIndentValue = "·  "
-	defaultScrollBarWidth       = 20
+	defaultParagraphIndentValue = "  "
+	defaultScrollBarWidth       = 30
 	defaultScrollBarBgColor     = display.Gray14
 	defaultScrollBarColor       = display.Gray1
 )
@@ -42,4 +42,6 @@ var (
 	boldFont       = &fonts.UbuntuSans_Bold20pt8b
 	italicFont     = &fonts.UbuntuSans_Italic20pt8b
 	boldItalicFont = &fonts.UbuntuSans_BoldItalic20pt8b
+
+	panelFont = &fonts.Montserrat_Medium16pt8b
 )

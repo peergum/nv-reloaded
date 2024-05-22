@@ -32,6 +32,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -44,33 +45,41 @@ const (
 	defaultStatsWidth  = 900 // defines the width of the Stats Window
 	defaultStatsHeight = 700 // defines the height of the Stats Window
 	defaultStatsMargin = 10  // defines the distance from the stats window to the top-right embedding window
+	wifiWidth          = 800
+	wifiHeight         = 600
+	screenBgColor      = display.Gray14
 )
 
 var (
 	shouldTerminate bool // program should exit
+	shouldRestart   bool // program should restart
 	shouldPowerOff  bool
 	shouldReboot    bool
-
-	signalChannel  chan os.Signal = make(chan os.Signal, 1)
-	debug          bool
-	noWelcome      bool
-	epd            bool
-	Rotation       it8951.Rotate = it8951.Rotate0
-	photoBorder    int           = 10
-	statsWidth                   = defaultStatsWidth
-	statsHeight                  = defaultStatsHeight
-	statsMargin                  = defaultStatsMargin
-	functionHeight               = 100
+	freshStart      bool           = true
+	signalChannel   chan os.Signal = make(chan os.Signal, 1)
+	debug           bool
+	noWelcome       bool
+	epd             bool
+	Rotation        it8951.Rotate = it8951.Rotate0
+	photoBorder     int           = 10
+	statsWidth                    = defaultStatsWidth
+	statsHeight                   = defaultStatsHeight
+	statsMargin                   = defaultStatsMargin
+	functionHeight                = 100
 
 	fnWindowToggle    = false
 	statsWindowToggle = false
+	wifiWindowToggle  = false
 
 	mainWindow  *display.Window
 	fnWindow    *display.Window
-	currentDoc  *content.Document
-	stats       *content.Stats
 	statsWindow *display.Window
+	wifiWindow  *display.Window
 	alertBox    *display.Window
+
+	currentDoc *content.Document
+	stats      *content.Stats
+	wifiPanel  *content.WifiPanel
 
 	metaKey uint16
 
@@ -102,139 +111,158 @@ func Debug(format string, args ...interface{}) {
 
 func main() {
 	flag.Parse()
-	Debug("%s starting", nv())
-	Debug("%s", copyright)
 
 	// external signal handler
 	signal.Notify(signalChannel, os.Interrupt, os.Kill)
 	go signalHandler(signalChannel)
 
-	// init
 	defer it8951.Close()
 	defer terminate()
 
-	Debug("Starting serious business")
+	for shouldRestart || freshStart {
+		Debug("%s starting", nv())
+		Debug("%s", copyright)
 
-	// start searching/updating keyboards
-	keyboardChannel := input.KeyboardChannel()
+		// init
 
-	keyChannel := input.KeyChannel()
-	eventChannel := make(chan bool, 10)
-	go input.Search(eventChannel)
+		Debug("Starting serious business")
 
-	display.InitDisplay()
-	display.InitScreen()
+		// start searching/updating keyboards
+		keyboardChannel := input.KeyboardChannel()
 
-	mainWindow = display.Screen.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
-		Title:       "Let's Do This!",
-		TitleBar:    true,
-		Border:      2,
-		BgColor:     display.White,
-		BorderColor: display.Black,
-	})
+		keyChannel := input.KeyChannel()
+		eventChannel := make(chan bool, 10)
+		go input.Search(eventChannel)
 
-	if noWelcome {
-		empty := &content.Empty{}
-		mainWindow.SetContent(empty, 0, 0).Load()
-	} else {
-		welcome := &content.Welcome{}
-		mainWindow.SetContent(welcome, 150, 150).Load()
-	}
+		display.InitDisplay()
+		display.InitScreen()
+		display.Screen.View.Fill(0, screenBgColor, display.Black).Update()
 
-	//fnNewDocument()
-	shouldTerminate = false
+		mainWindow = display.Screen.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
+			Title:        "Let's Do This!",
+			TitleBar:     true,
+			Border:       1,
+			BgColor:      display.White,
+			BorderColor:  display.Black,
+			Transparency: 0,
+		})
 
-mainLoop:
-	for !shouldTerminate {
-		select {
-		case kbd := <-keyboardChannel:
-			if kbd == nil {
-				panic("Keyboard search failed")
-			}
-			if kbd.File == "none" {
-				Debug("No keyboard found")
-				mainWindow.AlertBox("No Keyboard...", 0)
-			} else {
-				Debug("Keyboard %s added", kbd.Name)
-				mainWindow.AlertBox(fmt.Sprintf("%s Found", kbd.Name), 1000*time.Millisecond)
-			}
-		case event := <-keyChannel:
-			mainWindow.CancelAlert()
-			//Debug("Received event: %v", event)
-			if event.TypeName == "EV_KEY" && event.KeyName == "KEY_ESC" && event.Value == 1 {
-				Debug("FN Toggle")
-				fnToggleFnWindow()
-			} else if event.TypeName == "EV_KEY" && event.SpecialKeys {
-				if fnWindowToggle && metaKey != event.MetaKeys {
-					functions.SetMeta(event.MetaKeys)
-					fnWindow.SetUpdated().Load() //.Update()
+		if noWelcome {
+			empty := &content.Empty{}
+			mainWindow.SetContent(empty, 0, 0).Load()
+		} else {
+			welcome := &content.Welcome{}
+			mainWindow.SetContent(welcome, 150, 150).Load()
+		}
+		statusBar := display.Screen.NewStatusBar()
+		//fnNewDocument()
+		freshStart = false
+		shouldTerminate = false
+		shouldRestart = false
+
+		heartBeatTicker := time.NewTicker(time.Duration(1000) * time.Millisecond)
+	mainLoop:
+		for !shouldTerminate && !shouldRestart {
+			select {
+			case <-heartBeatTicker.C:
+				statusBar.Refresh()
+			case kbd := <-keyboardChannel:
+				if kbd == nil {
+					panic("Keyboard search failed")
 				}
-				metaKey = event.MetaKeys
-			} else if event.TypeName == "EV_KEY" && strings.Contains(event.KeyName, "KEY_F") && len(event.KeyName) > 5 && event.Value == 1 {
-				fnNum, err := strconv.Atoi(strings.Replace(event.KeyName, "KEY_F", "", 1))
-				Debug("Fn%d", fnNum)
-				if err == nil && fnNum > 0 && fnNum < 13 {
-					functions.FunctionKeys[fnNum-1][metaKey].Command()
+				if kbd.File == "none" {
+					Debug("No keyboard found")
+					mainWindow.AlertBox("No Keyboard...", 0)
+				} else {
+					Debug("Keyboard %s added", kbd.Name)
+					mainWindow.AlertBox(fmt.Sprintf("%s Found", kbd.Name), 1000*time.Millisecond)
 				}
-			} else if mainWindow.GetContentType() == "document" && event.TypeName == "EV_KEY" && event.Value > 0 && currentDoc.Ready {
-				currentDoc.Editor(event)
+			case event := <-keyChannel:
+				mainWindow.CancelAlert()
+				//Debug("Received event: %v", event)
+				if event.TypeName == "EV_KEY" && event.KeyName == "KEY_ESC" && event.Value == 1 {
+					Debug("FN Toggle")
+					fnToggleFnWindow()
+				} else if event.TypeName == "EV_KEY" && event.SpecialKeys {
+					if fnWindowToggle && metaKey != event.MetaKeys {
+						functions.SetMeta(event.MetaKeys)
+						fnWindow.SetUpdated().Load() //.Update()
+					}
+					metaKey = event.MetaKeys
+				} else if event.TypeName == "EV_KEY" && strings.Contains(event.KeyName, "KEY_F") && len(event.KeyName) > 5 && event.Value == 1 {
+					fnNum, err := strconv.Atoi(strings.Replace(event.KeyName, "KEY_F", "", 1))
+					Debug("Fn%d", fnNum)
+					if err == nil && fnNum > 0 && fnNum < 13 {
+						functions.FunctionKeys[fnNum-1][metaKey].Command()
+					}
+				} else if mainWindow.GetContentType() == "document" && event.TypeName == "EV_KEY" && event.Value > 0 && currentDoc.Ready {
+					currentDoc.Editor(event)
+				}
+
+			default:
+				if shouldTerminate {
+					break mainLoop
+				}
 			}
-
-		default:
-			if shouldTerminate {
-				break mainLoop
+			if mainWindow.GetContentType() == "document" && currentDoc.Ready {
+				if currentDoc.RefreshNeeded {
+					currentDoc.Editor(nil)
+				}
+				currentDoc.ToggleCursor()
 			}
 		}
-		if mainWindow.GetContentType() == "document" && currentDoc.Ready {
-			if currentDoc.RefreshNeeded {
-				currentDoc.Editor(nil)
+		heartBeatTicker.Stop()
+		Debug("We're done")
+		eventChannel <- true
+
+		win := mainWindow.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
+			//Title:       "NV PowerOff",
+			TitleBar:     false,
+			Border:       0,
+			BgColor:      display.Gray13,
+			BorderColor:  display.Black,
+			Transparency: 0.1,
+		})
+		font := &fonts.IsoMetrixNF_Bold30pt8b
+		if shouldPowerOff {
+			win.SetTextArea(font, 0, 0).
+				WriteCenteredIn(0, 0, win.W, win.H, "Powering Off...", display.Black, display.Gray13).
+				Update()
+
+			time.Sleep(time.Duration(2000) * time.Millisecond)
+			win.Fill(0, display.White, display.Black).
+				Update()
+			display.ShowLogo()
+			if err := exec.Command("shutdown", "-P", "now").Run(); err != nil {
+				Debug("Shutdown Error: %s", err)
 			}
-			currentDoc.ToggleCursor()
+		} else if shouldReboot {
+			win.SetTextArea(font, 0, 0).
+				WriteCenteredIn(0, 0, win.W, win.H, "Rebooting...", display.Black, display.White).
+				Update()
+
+			time.Sleep(time.Duration(2000) * time.Millisecond)
+			win.Fill(0, display.White, display.Black).
+				Update()
+			display.ShowLogo()
+			if err := exec.Command("shutdown", "-r", "now").Run(); err != nil {
+				Debug("Error Rebooting: %s", err)
+			}
+		} else if shouldRestart {
+			win.SetTextArea(font, 0, 0).
+				WriteCenteredIn(0, 0, win.W, win.H, "Restarting...", display.Black, display.White).
+				Update()
+
+			//time.Sleep(time.Duration(2000) * time.Millisecond)
+		} else {
+			win.SetTextArea(font, 0, 0).
+				WriteCenteredIn(0, 0, win.W, win.H, "Terminating", display.Black, display.White).
+				Update()
+
+			//time.Sleep(time.Duration(500) * time.Millisecond)
+			//win.Fill(0, display.White, display.Black).
+			//	Update()
 		}
-	}
-	Debug("We're done")
-	eventChannel <- true
-
-	win := display.Screen.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
-		//Title:       "NV PowerOff",
-		TitleBar:    false,
-		Border:      0,
-		BgColor:     display.White,
-		BorderColor: display.Black,
-	})
-	font := &fonts.IsoMetrixNF_Bold30pt8b
-	if shouldPowerOff {
-		win.SetTextArea(font, 0, 0).
-			WriteCenteredIn(0, 0, win.W, win.H, "Powering Off...", display.Black, display.White).
-			Update()
-
-		time.Sleep(2000 * time.Millisecond)
-		win.Fill(0, display.White, display.Black).
-			Update()
-		display.ShowLogo()
-		if err := exec.Command("shutdown", "-P", "now").Run(); err != nil {
-			Debug("Shutdown Error: %s", err)
-		}
-	} else if shouldReboot {
-		win.SetTextArea(font, 0, 0).
-			WriteCenteredIn(0, 0, win.W, win.H, "Rebooting...", display.Black, display.White).
-			Update()
-
-		time.Sleep(2000 * time.Millisecond)
-		win.Fill(0, display.White, display.Black).
-			Update()
-		display.ShowLogo()
-		if err := exec.Command("shutdown", "-r", "now").Run(); err != nil {
-			Debug("Error Rebooting: %s", err)
-		}
-	} else {
-		//win.SetTextArea(font, 0, 0).
-		//	WriteCenteredIn(0, 0, win.W, win.H, "Terminating", display.Black, display.White).
-		//	Update()
-
-		//time.Sleep(500 * time.Millisecond)
-		win.Fill(0, display.White, display.Black).
-			Update()
 	}
 }
 
@@ -247,7 +275,11 @@ func signalHandler(c chan os.Signal) {
 		select {
 		case s := <-c:
 			Debug("Got signal: %v", s)
-			shouldTerminate = true
+			if s == syscall.SIGKILL || s == syscall.SIGINT || s == syscall.SIGTERM {
+				shouldTerminate = true
+			} else if s == syscall.SIGHUP {
+				shouldRestart = true
+			}
 		default:
 		}
 	}

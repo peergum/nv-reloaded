@@ -64,7 +64,7 @@ func (welcome *Welcome) GetTitle() string {
 func (welcome *Welcome) Print() {
 	Debug("Loading welcome")
 	view := welcome.view
-	view.Rectangle(50, 50, view.InnerW-100, view.InnerH-100, 1, display.Black)
+	view.RoundedRectangle(50, 50, view.InnerW-100, view.InnerH-100, 1, display.Black, 20)
 	welcome.Document.Print()
 	//view := welcome.view
 	//var text string

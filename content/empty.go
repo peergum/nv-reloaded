@@ -28,12 +28,12 @@ type Empty struct {
 }
 
 func (empty *Empty) Init(view *display.View) (views []*display.View) {
-	empty.View = view
-	view.Fill(0, display.White, display.Black).
+	empty.View = view.NewView(0, 0, view.InnerW, view.InnerH, 4).
+		Fill(0, display.White, display.Black).
 		SetTextArea(&fonts.CourierStd20pt8b, 10, 10).
 		WriteCenteredIn(0, 0, view.InnerW, view.InnerH, "Ready when you are.", display.Black, display.White).
 		Update()
-	return append(views, view)
+	return append(views, empty.View)
 }
 
 func (empty *Empty) Type() string {

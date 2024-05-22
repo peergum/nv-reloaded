@@ -24,42 +24,41 @@ import (
 )
 
 var (
-	alertBox      *Window
-	alertBoxTimer *time.Timer
+	waitBox      *Window
+	waitBoxTimer *time.Timer
 )
 
-func (window *Window) AlertBox(text string, duration time.Duration) {
-	// if alert already open, cancel it first
-	if alertBox != nil {
-		window.CancelAlert()
+func (window *Window) WaitBox(text string, duration time.Duration) {
+	// if wait already open, cancel it first
+	if waitBox != nil {
+		window.CancelWait()
 	}
-	alertBox = window.NewCenteredWindow(WindowOptions{
-		TitleBar:     false,
-		Border:       5,
-		BorderColor:  Black,
-		BgColor:      Gray13,
-		Transparency: 0,
-		Radius:       40,
+	waitBox = window.NewCenteredWindow(WindowOptions{
+		TitleBar:    false,
+		Border:      5,
+		BorderColor: Black,
+		BgColor:     White,
 	})
-	alertBox.View.
+	waitBox.View.
+		Fill(2, White, Black).
 		SetTextArea(&fonts.IsoMetrixNF_Bold24pt8b, 10, 10).
-		WriteCenteredIn(0, 0, alertBox.InnerW, alertBox.InnerH, text, Black, Gray13).
+		WriteCenteredIn(0, 0, waitBox.InnerW, waitBox.InnerH, text, Black, White).
 		Update()
 
 	if duration > 0 {
-		alertBoxTimer = time.AfterFunc(duration, func() {
-			window.CancelAlert()
+		waitBoxTimer = time.AfterFunc(duration, func() {
+			window.CancelWait()
 		})
 	}
 }
 
-func (window *Window) CancelAlert() {
-	if alertBox != nil {
-		alertBox.Hide()
-		alertBox = nil
-		if alertBoxTimer != nil {
-			alertBoxTimer.Stop()
-			alertBoxTimer = nil
+func (window *Window) CancelWait() {
+	if waitBox != nil {
+		waitBox.Hide()
+		waitBox = nil
+		if waitBoxTimer != nil {
+			waitBoxTimer.Stop()
+			waitBoxTimer = nil
 		}
 	}
 }

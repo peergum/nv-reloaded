@@ -39,14 +39,15 @@ type Buffer struct {
 }
 
 type View struct {
-	X, Y, W, H                     int
-	InnerX, InnerY, InnerW, InnerH int
+	X, Y, W, H                     int // absolute coordinates
+	InnerX, InnerY, InnerW, InnerH int // absolute internal coordinates
 	BgColor                        uint16
 	buffer                         Buffer
 	TextArea                       TextArea
 	content                        Content
 	Xb, Yb, Wb, Hb                 int
 	Views                          []*View
+	//parent                         *View
 }
 
 const (
@@ -106,6 +107,9 @@ func (view *View) NewView(x, y, w, h int, bpp int) *View {
 		BgColor: view.BgColor,
 	}
 	newView.setBuffer(bpp)
+	newView.CopyPixels(newView.X, newView.Y, view, x, y, w, h)
+
+	//newView.parent = view
 	Debug("NewView = (%d,%d,%d,%d)", newView.X, newView.Y, newView.W, newView.H)
 	return &newView
 }
@@ -178,11 +182,47 @@ func (view *View) Fill(stroke int, bgColor it8951.Color, fgColor it8951.Color) *
 	return view
 }
 
+func (view *View) FillRounded(stroke int, bgColor it8951.Color, fgColor it8951.Color, radius int) *View {
+	Debug("Fill rounded view")
+	view.FillRoundedRectangle(0, 0, view.InnerW, view.InnerH, stroke, bgColor, fgColor, radius)
+	view.BgColor = uint16(bgColor)
+	return view
+}
+
+func (view *View) FillTopRounded(stroke int, bgColor it8951.Color, fgColor it8951.Color, radius int) *View {
+	Debug("Fill rounded view")
+	view.FillTopRoundedRectangle(0, 0, view.InnerW, view.InnerH, stroke, bgColor, fgColor, radius)
+	view.BgColor = uint16(bgColor)
+	return view
+}
+
 func (view *View) Rectangle(x, y, w, h int, stroke int, fgColor it8951.Color) *View {
 	view.DrawHLine(x, y, w, stroke, fgColor)
 	view.DrawHLine(x, y+h-stroke-1, w, stroke, fgColor)
 	view.DrawVLine(x, y, h, stroke, fgColor)
 	view.DrawVLine(x+w-stroke-1, y, h, stroke, fgColor)
+	return view
+}
+
+func (view *View) RoundedRectangle(x, y, w, h int, stroke int, fgColor it8951.Color, radius int) *View {
+	view.DrawHLine(x+radius, y, w-2*radius, stroke, fgColor)
+	view.DrawHLine(x+radius, y+h-stroke, w-2*radius, stroke, fgColor)
+	view.DrawVLine(x, y+radius, h-2*radius, stroke, fgColor)
+	view.DrawVLine(x+w-stroke, y+radius, h-2*radius, stroke, fgColor)
+	view.drawCircleHelper(x+radius, y+radius, radius, 1, stroke, fgColor)
+	view.drawCircleHelper(x+w-1-radius, y+radius, radius, 2, stroke, fgColor)
+	view.drawCircleHelper(x+w-1-radius, y+h-1-radius, radius, 4, stroke, fgColor)
+	view.drawCircleHelper(x+radius, y+h-1-radius, radius, 8, stroke, fgColor)
+	return view
+}
+
+func (view *View) TopRoundedRectangle(x, y, w, h int, stroke int, fgColor it8951.Color, radius int) *View {
+	view.DrawHLine(x+radius, y, w-2*radius, stroke, fgColor)
+	view.DrawHLine(x, y+h-stroke, w, stroke, fgColor)
+	view.DrawVLine(x, y+radius, h-radius, stroke, fgColor)
+	view.DrawVLine(x+w-stroke, y+radius, h-radius, stroke, fgColor)
+	view.drawCircleHelper(x+radius, y+radius, radius, 1, stroke, fgColor)
+	view.drawCircleHelper(x+w-1-radius, y+radius, radius, 2, stroke, fgColor)
 	return view
 }
 
@@ -253,7 +293,7 @@ func (view *View) FillRectangle(x, y, w, h int, stroke int, bgColor it8951.Color
 			if yy < y+stroke || yy >= y+h-stroke ||
 				xx < x+stroke || xx >= x+w-stroke {
 				color = uint16(fgColor)
-			} else if bgColor != 0x00 {
+			} else if bgColor != 0xffff {
 				// if not transparent background, use bgColor
 				color = uint16(bgColor) // << 4
 			} else {
@@ -265,6 +305,117 @@ func (view *View) FillRectangle(x, y, w, h int, stroke int, bgColor it8951.Color
 		}
 	}
 	return view
+}
+
+func (view *View) FillRoundedRectangle(x, y, w, h int, stroke int, bgColor it8951.Color, fgColor it8951.Color, radius int) *View {
+	Debug("FillRoundedRectangle %d,%d,%d,%d stroke %d", x, y, w, h, stroke)
+	view.FillRectangle(x+radius, y, w-2*radius, h, 0, bgColor, fgColor)
+	view.fillCircleHelper(x+w-radius-1, y+radius, radius, 1, h-2*radius-1, bgColor)
+	view.fillCircleHelper(x+radius, y+radius, radius, 2, h-2*radius-1, bgColor)
+	view.RoundedRectangle(x, y, w, h, stroke, fgColor, radius)
+	return view
+}
+
+func (view *View) FillTopRoundedRectangle(x, y, w, h int, stroke int, bgColor it8951.Color, fgColor it8951.Color, radius int) *View {
+	Debug("FillRoundedRectangle %d,%d,%d,%d stroke %d", x, y, w, h, stroke)
+	view.FillRectangle(x+radius, y, w-2*radius, h, 0, bgColor, fgColor)
+	view.fillCircleHelper(x+w-radius-1, y+radius, radius, 1, h-radius-1, bgColor)
+	view.fillCircleHelper(x+radius, y+radius, radius, 2, h-radius-1, bgColor)
+	view.TopRoundedRectangle(x, y, w, h, stroke, fgColor, radius)
+	return view
+}
+
+// drawCircleHelper draws an arc given the center, the radius and the corner(s) to draw
+// cornerName's bits:
+// - 0 top left
+// - 1 top right
+// - 2 bottom right
+// - 3 bottom left
+func (view *View) drawCircleHelper(x0, y0, r int, corners int, stroke int, color it8951.Color) {
+	c := uint16(color)
+	//r := radius
+	for s := stroke; s > 0; s-- {
+		f := 1 - r
+		ddFx := 1
+		ddFy := -2 * r
+		x := 0
+		y := r
+
+		for x < y {
+			if f >= 0 {
+				y--
+				ddFy += 2
+				f += ddFy
+			}
+			x++
+			ddFx += 2
+			f += ddFx
+			if corners&0x4 != 0 {
+				view.buffer.writePixel(view.InnerX+x0+x-s, view.InnerY+y0+y-s, c)
+				view.buffer.writePixel(view.InnerX+x0+y-s, view.InnerY+y0+x-s, c)
+			}
+			if corners&0x2 != 0 {
+				view.buffer.writePixel(view.InnerX+x0+x-s, view.InnerY+y0-y+s, c)
+				view.buffer.writePixel(view.InnerX+x0+y-s, view.InnerY+y0-x+s, c)
+			}
+			if corners&0x8 != 0 {
+				view.buffer.writePixel(view.InnerX+x0-y+s, view.InnerY+y0+x-s, c)
+				view.buffer.writePixel(view.InnerX+x0-x+s, view.InnerY+y0+y-s, c)
+			}
+			if corners&0x1 != 0 {
+				view.buffer.writePixel(view.InnerX+x0-y+s, view.InnerY+y0-x+s, c)
+				view.buffer.writePixel(view.InnerX+x0-x+s, view.InnerY+y0-y+s, c)
+			}
+		}
+	}
+}
+
+// same as drawCircleHelper but fill the arc
+func (view *View) fillCircleHelper(x0, y0, r int,
+	corners int, delta int,
+	color it8951.Color) {
+	c := uint16(color)
+
+	f := 1 - r
+	ddFx := 1
+	ddFy := -2 * r
+	x := 0
+	y := r
+	px := x
+	py := y
+
+	delta++ // Avoid some +1's in the loop
+
+	for x < y {
+		if f >= 0 {
+			y--
+			ddFy += 2
+			f += ddFy
+		}
+		x++
+		ddFx += 2
+		f += ddFx
+		// These checks avoid double-drawing certain lines, important
+		// for the SSD1306 library which has an INVERT drawing mode.
+		if x < (y + 1) {
+			if corners&1 != 0 {
+				view.buffer.writeFastVLine(view.InnerX+x0+x, view.InnerY+y0-y, 2*y+delta, c)
+			}
+			if corners&2 != 0 {
+				view.buffer.writeFastVLine(view.InnerX+x0-x, view.InnerY+y0-y, 2*y+delta, c)
+			}
+		}
+		if y != py {
+			if corners&1 != 0 {
+				view.buffer.writeFastVLine(view.InnerX+x0+py, view.InnerY+y0-px, 2*px+delta, c)
+			}
+			if corners&2 != 0 {
+				view.buffer.writeFastVLine(view.InnerX+x0-py, view.InnerY+y0-px, 2*px+delta, c)
+			}
+			py = y
+		}
+		px = x
+	}
 }
 
 func (view *View) Update() *View {
@@ -363,8 +514,8 @@ func LoadBitmap(name string, bpp int) (View, error) {
 		return view, errors.New("not 16 bits")
 	}
 	// if ((bmp[30] | (bmp[31] << 8) | (bmp[32] << 16) | (bmp[33] << 24)) != 0) {
-	//     Debug( "Compressed");
-	//     return NULL;
+	//     Debug( "Compressed")
+	//     return NULL
 	// }
 	view.W = int(binary.LittleEndian.Uint32(bmp[18:22]))
 	view.H = int(binary.LittleEndian.Uint32(bmp[22:26]))
@@ -525,9 +676,30 @@ func pixelFormat(bpp int) it8951.PixelMode {
 }
 
 func (view *View) CopyPixels(dx, dy int, source *View, sx, sy, sw, sh int) {
+	//for _, parent := range source.Views {
+	//	if parent != view {
+	//		view.CopyPixels(dx, dy, parent, sx, sy, sw, sh)
+	//	}
+	//}
+	for y := 0; y < sh; y++ {
+		for x := 0; x < sw; x++ {
+			if dx+x >= view.X && dy+y >= view.Y && dx+x < view.X+view.W && dy+y < view.Y+view.H &&
+				sx+x >= source.X && sy+y >= source.Y && sx+x < source.X+source.W && sy+y < source.Y+source.H {
+				view.buffer.writePixel(dx+x, dy+y, source.buffer.readPixel(sx+x, sy+y))
+			}
+		}
+	}
+}
+
+func (view *View) CopyPixelsWithTransparency(dx, dy int, source *View, sx, sy, sw, sh int, transparency float64, bgColor uint16) {
 	for x := 0; x < sw; x++ {
 		for y := 0; y < sh; y++ {
-			view.buffer.writePixel(dx+x, dy+y, source.buffer.readPixel(sx+x, sy+y))
+			if dx+x >= view.X && dy+y >= view.Y && dx+x < view.X+view.W && dy+y < view.Y+view.H &&
+				sx+x >= source.X && sy+y >= source.Y && sx+x < source.X+source.W && sy+y < source.Y+source.H {
+				sColor := source.buffer.readPixel(sx+x, sy+y)
+				dColor := min(0xf, uint16(math.Round(float64(bgColor&0xf)*(1-transparency)+float64(sColor&0xf)*transparency)))
+				view.buffer.writePixel(dx+x, dy+y, dColor)
+			}
 		}
 	}
 }

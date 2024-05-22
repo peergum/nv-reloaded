@@ -47,7 +47,7 @@ var (
 		input.Shift: {"Bottom", fnDoNothing},
 	}
 	F6 = content.FunctionKey{
-		input.None: {"Setup Wifi", fnDoNothing},
+		input.None: {"Setup Wifi", fnWifiConfig},
 	}
 	F7 = content.FunctionKey{
 		input.None:               {"Start Block", fnDoNothing},
@@ -80,6 +80,7 @@ var (
 		input.None:                           {"Sleep", fnDoNothing},
 		input.Shift:                          {"Reboot", fnReboot},
 		input.Ctrl:                           {"Shutdown", fnShutdown},
+		input.Alt:                            {"Restart", fnRestart},
 		input.Shift | input.Ctrl | input.Alt: {"Factory Reset", fnDoNothing},
 	}
 
@@ -129,9 +130,10 @@ func fnToggleStats() {
 			statsWindow = mainWindow.NewWindow(x, y, statsWidth, statsHeight, display.WindowOptions{
 				Title:       "Stats",
 				TitleBar:    true,
-				Border:      5,
+				Border:      2,
 				BorderColor: display.Black,
 				BgColor:     display.Gray14,
+				TopRounded:  true,
 			})
 
 			statsWindow.SetContent(stats, 10, 10).
@@ -186,4 +188,43 @@ func fnReboot() {
 
 func fnExit() {
 	shouldTerminate = true
+}
+
+func fnRestart() {
+	shouldRestart = true
+}
+
+func fnWifiConfig() {
+	wifiWindowToggle = !wifiWindowToggle
+
+	if wifiWindowToggle {
+		if wifiWindow == nil {
+			wifiPanel = &content.WifiPanel{
+				//Config: &content.WifiConfig{},
+			}
+
+			x := (mainWindow.InnerW - wifiWidth) / 2
+			y := (mainWindow.InnerH - wifiHeight) / 2
+			wifiWindow = mainWindow.NewWindow(x, y, wifiWidth, wifiHeight, display.WindowOptions{
+				Title:        "Wifi Config",
+				TitleBar:     true,
+				Border:       2,
+				BorderColor:  display.Black,
+				BgColor:      display.White,
+				Transparency: 0,
+				TopRounded:   true,
+				//Radius:       10,
+			})
+
+			wifiWindow.SetContent(wifiPanel, 10, 10).
+				Load()
+
+		} else {
+			wifiWindow.Show()
+		}
+		wifiWindowToggle = true
+	} else {
+		wifiWindow.Hide()
+		wifiWindowToggle = false
+	}
 }
