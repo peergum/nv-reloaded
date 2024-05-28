@@ -5,8 +5,8 @@ Description=NV-Reloaded Application on %I
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/nv -d -dd -dc -di
-ExecReload=kill -USR1 $MAINPID
-ExecStop=kill -TERM $MAINPID
+#ExecReload=kill -USR1 $MAINPID
+#ExecStop=kill -TERM $MAINPID
 
 WorkingDirectory=/var/nv
 TimeoutSec=5

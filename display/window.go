@@ -32,6 +32,7 @@ type WindowOptions struct {
 	Transparency float64 // 0 (opaque) to 1 (transparent)
 	Radius       int
 	TopRounded   bool
+	StatusBar    *StatusBar // nil for most windows
 }
 
 type Window struct {
@@ -86,8 +87,8 @@ func (view *View) NewCenteredWindow(options WindowOptions) *Window {
 }
 
 func (view *View) NewWindow(x, y, w, h int, options WindowOptions) *Window {
-	Debug("Create a New Window (%d,%d,%d,%d,%s)", x, y, w, h, options.Title)
-	alertBox.CancelAlert()
+	Debug("Create a New Window (%d,%d,%d,%d,\"%s\")", x, y, w, h, options.Title)
+	CancelAlertBox()
 	var window Window
 	window.parent = view
 	window.WindowOptions = options
@@ -194,13 +195,17 @@ func (window *Window) RefreshTitleBar() {
 	window.InnerY -= titleBarHeight
 	window.InnerH += titleBarHeight
 
+	actualWidth := window.W
+	if window.WindowOptions.StatusBar != nil {
+		actualWidth = window.W - window.WindowOptions.StatusBar.W
+	}
 	for _, parent := range window.parent.Views {
 		if parent != nil {
-			window.CopyPixels(0, 0, parent, window.X, window.Y, window.W, titleBarHeight)
+			window.CopyPixels(0, 0, parent, window.X, window.Y, actualWidth, titleBarHeight)
 		}
 	}
 
-	window.Refresh(window.X, window.Y, window.W, titleBarHeight)
+	window.Refresh(window.X, window.Y, actualWidth, titleBarHeight)
 
 	x0, y0 := 0, 0
 	window.SetTextArea(&fonts.SF_Compact_Display_Black20pt8b, 0, 0)

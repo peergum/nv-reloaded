@@ -32,4 +32,4 @@ sync
 # don't prebuild binary
 nv
 .DS_Store
-
+go.work*

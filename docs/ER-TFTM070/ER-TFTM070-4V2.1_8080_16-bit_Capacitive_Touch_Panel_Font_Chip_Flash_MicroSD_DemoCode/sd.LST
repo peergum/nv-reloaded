@@ -1,0 +1,344 @@
+C51 COMPILER V7.04   SD                                                                    10/14/2014 13:54:20 PAGE 1   
+
+
+C51 COMPILER V7.04, COMPILATION OF MODULE SD
+OBJECT MODULE PLACED IN sd.OBJ
+COMPILER INVOKED BY: D:\Keil1\C51\BIN\C51.EXE sd.c DEBUG OBJECTEXTEND
+
+stmt level    source
+
+   1          //----------------------------------------------------------------------
+   2          //EASTRISING TECHNOLOGY CO,.LTD.//
+   3          // Module    : ER-TFT070-4    7 INCH TFT LCD  800*480
+   4          // Lanuage   : C51 Code
+   5          // Create    : JAVEN LIU
+   6          // Date      : 2014-10-13
+   7          // Drive IC  : SSD1963  TP:5206  FONT CHIP:GT21L16T1W  FLASH:W25Q128  TF CARD :1G
+   8          // INTERFACE : LCM:16BIT 8080  TF CARD:SPI  TP:SPI  FONT CHIP:SPI  FLASH:SPI
+   9          // MCU           : STC12LE5C60S2
+  10          // VDD           : 3.3V OR 5V
+  11          // MCU VDD   :3.3V   
+  12          //----------------------------------------------------------------------
+  13          
+  14          /*------------------------------------------------*/
+  15          #include <STC12C5A.H>
+  16          #include <stdio.h>
+  17          #include <intrins.h>
+  18          #include"SSD1963.h"
+  19          #include"word.h"
+  20          #include"TP.h"
+  21          #include"fontchip.h"
+*** WARNING C280 IN LINE 241 OF FONTCHIP.H: 'k': unreferenced local variable
+*** WARNING C280 IN LINE 241 OF FONTCHIP.H: 'k1': unreferenced local variable
+  22          #include"25Q32.h"
+  23          //=============================================================
+  24          //write one byte to SD
+  25          sbit SD_CLK = P1^7;
+  26          sbit SD_DI  = P1^5;
+  27          sbit SD_DO  = P1^6;
+  28          sbit SD_CS  = P1^4;
+  29          
+  30          //===========================================================
+  31          
+  32          //===========================================================
+  33          //Buffer
+  34          unsigned char xdata DATA[512];
+  35          
+  36          //===========================================================
+  37          //write one byte to SD
+  38          void SdWrite(unsigned char n)
+  39          {
+  40   1      
+  41   1      unsigned char i;
+  42   1      
+  43   1      for(i=8;i;i--)
+  44   1      {
+  45   2      SD_CLK=0;
+  46   2      SD_DI=(n&0x80);
+  47   2      n<<=1;
+  48   2      SD_CLK=1;
+  49   2      }
+  50   1      SD_DI=1; 
+  51   1      } 
+  52          //===========================================================
+  53          //read one byte
+C51 COMPILER V7.04   SD                                                                    10/14/2014 13:54:20 PAGE 2   
+
+  54          unsigned char SdRead()
+  55          {
+  56   1      unsigned char n,i;
+  57   1      for(i=8;i;i--)
+  58   1      {
+  59   2      SD_CLK=0;
+  60   2      SD_CLK=1;
+  61   2      n<<=1;
+  62   2      if(SD_DO) n|=1;
+  63   2      
+  64   2      }
+  65   1      return n;
+  66   1      }
+  67          //============================================================
+  68          //Detecting the response of the SD card
+  69          unsigned char SdResponse()
+  70          {
+  71   1      unsigned char i=0,response;
+  72   1      
+  73   1      while(i<=8)
+  74   1      {
+  75   2      response = SdRead();
+  76   2      if(response==0x00)
+  77   2      break;
+  78   2      if(response==0x01)
+  79   2      break;
+  80   2      i++;
+  81   2      }
+  82   1      return response;
+  83   1      } 
+  84          //================================================================
+  85          //Send commands to the SD card
+  86          void SdCommand(unsigned char command, unsigned long argument, unsigned char CRC)
+  87          {
+  88   1      
+  89   1      SdWrite(command|0x40);
+  90   1      SdWrite(((unsigned char *)&argument)[0]);
+  91   1      SdWrite(((unsigned char *)&argument)[1]);
+  92   1      SdWrite(((unsigned char *)&argument)[2]);
+  93   1      SdWrite(((unsigned char *)&argument)[3]);
+  94   1      SdWrite(CRC);
+  95   1      }
+  96          //================================================================
+  97          //Initialize the SD card
+  98          unsigned char SdInit(void)
+  99          {
+ 100   1      int delay=0, trials=0;
+ 101   1      unsigned char i;
+ 102   1      unsigned char response=0x01;
+ 103   1      
+ 104   1      SD_CS=1;
+ 105   1      for(i=0;i<=9;i++)
+ 106   1      SdWrite(0xff);
+ 107   1      SD_CS=0;
+ 108   1      
+ 109   1      //Send Command 0 to put MMC in SPI mode
+ 110   1      SdCommand(0x00,0,0x95);
+ 111   1      
+ 112   1      
+ 113   1      response=SdResponse();
+ 114   1      
+ 115   1      if(response!=0x01)
+C51 COMPILER V7.04   SD                                                                    10/14/2014 13:54:20 PAGE 3   
+
+ 116   1      {
+ 117   2      return 0;
+ 118   2      } 
+ 119   1      
+ 120   1      while(response==0x01)
+ 121   1      {
+ 122   2      SD_CS=1;
+ 123   2      SdWrite(0xff);
+ 124   2      SD_CS=0;
+ 125   2      SdCommand(0x01,0x00ffc000,0xff);
+ 126   2      response=SdResponse();
+ 127   2      } 
+ 128   1      
+ 129   1      SD_CS=1;
+ 130   1      SdWrite(0xff);
+ 131   1      return 1; 
+ 132   1      }
+ 133          //================================================================
+ 134          //Specify the address to write  the SD card data, a maximum of 512 bytes
+ 135          unsigned char SdWriteBlock(unsigned char *Block, unsigned long address,int len)
+ 136          {
+ 137   1      unsigned int count;
+ 138   1      unsigned char dataResp;
+ 139   1      //Block size is 512 bytes exactly
+ 140   1      //First Lower SS
+ 141   1      
+ 142   1      SD_CS=0;
+ 143   1      //Then send write command
+ 144   1      SdCommand(0x18,address,0xff);
+ 145   1      
+ 146   1      if(SdResponse()==00)
+ 147   1      {
+ 148   2      SdWrite(0xff);
+ 149   2      SdWrite(0xff);
+ 150   2      SdWrite(0xff);
+ 151   2      //command was a success - now send data
+ 152   2      //start with DATA TOKEN = 0xFE
+ 153   2      SdWrite(0xfe);
+ 154   2      //now send data
+ 155   2      for(count=0;count<len;count++) SdWrite(*Block++);
+ 156   2      
+ 157   2      for(;count<512;count++) SdWrite(0);
+ 158   2      //data block sent - now send checksum
+ 159   2      SdWrite(0xff);
+ 160   2      SdWrite(0xff);
+ 161   2      //Now read in the DATA RESPONSE token
+ 162   2      dataResp=SdRead();
+ 163   2      //Following the DATA RESPONSE token
+ 164   2      //are a number of BUSY bytes
+ 165   2      //a zero byte indicates the MMC is busy
+ 166   2      
+ 167   2      while(SdRead()==0);
+ 168   2      
+ 169   2      dataResp=dataResp&0x0f; //mask the high byte of the DATA RESPONSE token
+ 170   2      SD_CS=1;
+ 171   2      SdWrite(0xff);
+ 172   2      if(dataResp==0x0b)
+ 173   2      {
+ 174   3      //printf("DATA WAS NOT ACCEPTED BY CARD -- CRC ERROR\n");
+ 175   3      return 0;
+ 176   3      }
+ 177   2      if(dataResp==0x05)
+C51 COMPILER V7.04   SD                                                                    10/14/2014 13:54:20 PAGE 4   
+
+ 178   2      return 1;
+ 179   2      
+ 180   2      //printf("Invalid data Response token.\n");
+ 181   2      return 0;
+ 182   2      }
+ 183   1      //printf("Command 0x18 (Write) was not received by the MMC.\n");
+ 184   1      return 0;
+ 185   1      }
+ 186          
+ 187          //=======================================================================
+ 188          //Specified address from the SD card to read data, a maximum of 512 bytes
+ 189          unsigned char SdReadBlock(unsigned char *Block, unsigned long address,int len)
+ 190          {
+ 191   1      unsigned int count;
+ 192   1      //Block size is 512 bytes exactly
+ 193   1      //First Lower SS
+ 194   1      
+ 195   1       //printf("MMC_read_block\n");
+ 196   1      
+ 197   1      SD_CS=0;
+ 198   1      //Then send write command
+ 199   1      SdCommand(0x11,address,0xff);
+ 200   1      
+ 201   1      if(SdResponse()==00)
+ 202   1      {
+ 203   2      //command was a success - now send data
+ 204   2      //start with DATA TOKEN = 0xFE
+ 205   2      while(SdRead()!=0xfe);
+ 206   2      
+ 207   2      for(count=0;count<len;count++) *Block++=SdRead(); 
+ 208   2      
+ 209   2      for(;count<512;count++) SdRead();
+ 210   2      
+ 211   2      //data block sent - now send checksum
+ 212   2      SdRead();
+ 213   2      SdRead();
+ 214   2      //Now read in the DATA RESPONSE token
+ 215   2      SD_CS=1;
+ 216   2      SdRead();
+ 217   2      return 1;
+ 218   2      }
+ 219   1       //printf("Command 0x11 (Read) was not received by the MMC.\n");
+ 220   1      return 0;
+ 221   1      }
+ 222          
+ 223          
+ 224          
+ 225          void Display_JPG()///SD card physical address of the first data address initial value
+ 226          { unsigned long jn;  
+ 227   1        unsigned int in;
+ 228   1        unsigned long AddTemp=317952;///SD card physical address of the first data address initial value
+ 229   1        unsigned char mn=5;  //Total number of picture
+ 230   1              
+ 231   1      
+ 232   1              for(;mn!=0;mn--)
+ 233   1               {      LCD_SetPos(0,799,0,479);
+ 234   2                      for(jn=0;jn<1500;jn++)   //A picture information  comprising 1500x512 bytes
+ 235   2                          {
+ 236   3                          SdReadBlock(DATA,AddTemp+(jn*512),512);
+ 237   3                          for(in=0;in<256;in++)                    
+ 238   3                                 {   
+ 239   4                                 Write_Data_byte(DATA[2*in],DATA[2*in+1]); 
+C51 COMPILER V7.04   SD                                                                    10/14/2014 13:54:20 PAGE 5   
+
+ 240   4                             }
+ 241   3                           } 
+ 242   2                           AddTemp = AddTemp+((jn+4)*512);       
+ 243   2                               while(KEY);  
+ 244   2              }
+ 245   1                             
+ 246   1      
+ 247   1      
+ 248   1      } 
+ 249          
+ 250          
+ 251          
+ 252          //============================================================
+ 253          //Ö÷³ÌÐò        
+ 254          main()
+ 255          {
+ 256   1      
+ 257   1              P1=0xff;
+ 258   1              P2=0xff;
+ 259   1              P3=0xff;
+ 260   1              P0=0xff;
+ 261   1              BL_ON=0; //Turn off the blacklight
+ 262   1              SSD1963_Initial();//LCD initialization
+ 263   1              BL_ON=1; //Turn on the blacklight
+ 264   1              while(1)
+ 265   1              {               TPTEST();       //Capacitive touch screen test
+ 266   2                 
+ 267   2                      LCD_FULL(0xf800);
+ 268   2              
+ 269   2                       while(KEY);        
+ 270   2                      LCD_FULL(0x07e0);
+ 271   2                       while(KEY);            
+ 272   2                      LCD_FULL(0x001f);
+ 273   2                       while(KEY);
+ 274   2                      LCD_FULL(0x07ff);
+ 275   2                       while(KEY);
+ 276   2                      LCD_FULL(0xffe0);
+ 277   2                       while(KEY);
+ 278   2                      LCD_FULL(0xf81f);
+ 279   2                       while(KEY);
+ 280   2              
+ 281   2                      LCD_clear(0x00);        
+ 282   2                       while(KEY);
+ 283   2                      LCD_clear(0xffff);      
+ 284   2                       while(KEY);
+ 285   2              
+ 286   2                      DispRGBGray();
+ 287   2                       while(KEY);
+ 288   2              
+ 289   2                      show_pic(PIC);        //Display pictures stored  in microcontroller
+ 290   2                      while(KEY);
+ 291   2      
+ 292   2                      LCD_clear(0xffff);      
+ 293   2                      Display_GB2312_String();//show font
+ 294   2                      while(KEY);
+ 295   2                      LCD_clear(0xffff);      //show font
+ 296   2                      SHOW_BOOK(book);                        
+ 297   2                      while(KEY);
+ 298   2              
+ 299   2              
+ 300   2                      SdInit();         //SD Card initialization
+ 301   2                      Display_JPG();         ////pictuer in SD card
+C51 COMPILER V7.04   SD                                                                    10/14/2014 13:54:20 PAGE 6   
+
+ 302   2      
+ 303   2      
+ 304   2                      
+ 305   2                      flash(); ////pictuer in flash
+ 306   2                      while(KEY);
+ 307   2              }
+ 308   1      }
+ 309          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   6175    ----
+   CONSTANT SIZE    =  49771    ----
+   XDATA SIZE       =    674    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     22     298
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)

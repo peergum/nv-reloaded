@@ -47,7 +47,8 @@ var (
 		input.Shift: {"Bottom", fnDoNothing},
 	}
 	F6 = content.FunctionKey{
-		input.None: {"Setup Wifi", fnWifiConfig},
+		input.None:  {"WiFi Setup", fnWifiConfig},
+		input.Shift: {"WiFi on/off", fnWifiToggle},
 	}
 	F7 = content.FunctionKey{
 		input.None:               {"Start Block", fnDoNothing},
@@ -227,4 +228,10 @@ func fnWifiConfig() {
 		wifiWindow.Hide()
 		wifiWindowToggle = false
 	}
+}
+
+func fnWifiToggle() {
+	wifiActive = !wifiActive
+	// TODO: enable/disable wifi
+	statusBar.SetWifiState(wifiActive)
 }

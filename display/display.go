@@ -24,6 +24,18 @@ import (
 
 const (
 	LogoFilename = "images/nv-reloaded.bmp"
+	iconWifi0    = "images/icons/wifi_0.bmp"
+	iconWifi1    = "images/icons/wifi_1.bmp"
+	iconWifi2    = "images/icons/wifi_2.bmp"
+	iconWifi3    = "images/icons/wifi_3.bmp"
+	iconWifi4    = "images/icons/wifi_4.bmp"
+	iconWifiOff  = "images/icons/wifi_off.bmp"
+	iconBattery0 = "images/icons/battery_0.bmp"
+	iconBattery1 = "images/icons/battery_1.bmp"
+	iconBattery2 = "images/icons/battery_2.bmp"
+	iconBattery3 = "images/icons/battery_3.bmp"
+	iconBattery4 = "images/icons/battery_4.bmp"
+	iconCharging = "images/icons/battery_chg.bmp"
 )
 
 var (
@@ -59,10 +71,10 @@ func InitScreen() {
 		},
 		Windows: make([]*Window, 0, 10),
 	}
+	Screen.setBuffer(1)
 	if !noLogo {
 		ShowLogo()
 	}
-	Screen.setBuffer(4)
 	// the only view of Screen is itself
 	// beware of possible recursions here!
 	Screen.Views = make([]*View, 0)
@@ -70,14 +82,9 @@ func InitScreen() {
 }
 
 func ShowLogo() {
-	bpp := 4
-	logo, err := LoadBitmap(LogoFilename, bpp)
+	bpp := 8
+	logoView, err := Screen.LoadBitmapCentered(LogoFilename, bpp)
 	if err == nil {
-		Screen.DrawCentered(logo, bpp)
+		logoView.Update()
 	}
-	it8951.WaitForDisplayReady()
-	//for i := 0; i < 2; i++ {
-	//	//Debug("%d...", i)
-	//	time.Sleep(time.Duration(1) * time.Second)
-	//}
 }

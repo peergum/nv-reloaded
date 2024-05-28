@@ -358,7 +358,7 @@ func (document *Document) Print() {
 	view := document.view
 	//document.cLine = rand.Int() % max(1, document.lCount)
 	if document.Modified || document.RefreshNeeded {
-		view.FillRectangle(0, 0, view.InnerW, view.InnerH, 0, display.White, display.Black)
+		view.Fill(0, display.White, display.Black)
 	}
 	//cLine = document.cLine
 	var x, y int
@@ -423,66 +423,6 @@ func (document *Document) Print() {
 			text = ""
 		}
 		y += int(view.TextArea.Font.YAdvance)
-		//totalW := 0
-		//for i, w := range ll {
-		//	x0, y0 := 0, 0
-		//	var wb int
-		//	text:=string(w.before) + string(w.word) + string(w.after);
-		//	_, _, wb, _ = view.GetTextBounds(text, &x0, &y0)
-		//	totalW +=wb;
-		//	if totalW>view.InnerW
-		//	if i == 0 && ll[i] != ll[i].paragraph.firstElement {
-		//		space = ""
-		//	} else if i == 0 && ll[i] == ll[i].paragraph.firstElement && document.paragraphIndent {
-		//		space = document.paragraphIndentValue
-		//	}
-		//	line += space + string(w.before) + string(w.word) + string(w.after)
-		//	document.currentElement = w
-		//}
-		////fmt.Println("line:", line)
-		//x0, y0 := view.TextArea.MarginX, y
-		//xx, yy := x0, y0
-		//var xb, yb, wb, hb int
-		//if line != "" {
-		//	xb, yb, wb, hb = view.GetTextBounds(line, &xx, &yy)
-		//}
-		//Debug("%d,%d,%d,%d - %d,%d,%d,%d", x0, y0, xx, yy, xb, yb, wb, hb)
-
-		//for i, w := range ll {
-		//	space := " "
-		//	if i == 0 && ll[i] != ll[i].paragraph.firstElement {
-		//		space = ""
-		//	} else if i == 0 && ll[i] == ll[i].paragraph.firstElement && document.paragraphIndent {
-		//		space = document.paragraphIndentValue
-		//	}
-		//	line += space + string(w.before) + string(w.word) + string(w.after)
-		//	document.currentElement = w
-		//}
-		////fmt.Println("line:", line)
-		//x0, y0 := view.TextArea.MarginX, y
-		//xx, yy := x0, y0
-		//var xb, yb, wb, hb int
-		//if line != "" {
-		//	xb, yb, wb, hb = view.GetTextBounds(line, &xx, &yy)
-		//}
-		//Debug("%d,%d,%d,%d - %d,%d,%d,%d", x0, y0, xx, yy, xb, yb, wb, hb)
-		//
-		////view.SetCursor(x0-(x-x0), y0)
-		////w := view.InnerW - 2*view.TextArea.MarginX
-		////h := int(view.TextArea.Font.YAdvance)
-		////characterView := view.NewView(x0, y0, w, h, 4)
-		////characterView.Fill(0, display.White, display.Black)
-		////if line != "" {
-		////	characterView.SetTextArea(view.TextArea.Font, 0, 0).
-		////		SetCursor(x0, y0-yb).
-		////		Write(line, display.Black, display.White)
-		////}
-		////view.CopyPixels(x0, y0, characterView, 0, 0, w, h)
-		////characterView.Update()
-		//
-		//view.SetCursor(x, y-view.TextArea.MarginY)
-		//view.Write(line, display.Black, display.Transparent)
-		//y += int(view.TextArea.Font.YAdvance)
 	}
 	view.Update()
 

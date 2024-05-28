@@ -17,7 +17,7 @@ nv:
 
 install: nv
 	if [ "`hostname`" = "pi4" ]; then \
-		sudo install -m 4755 -p -o root -g root  nv /usr/local/bin/ ;\
+		sudo install -m a=rxs -p -o root -g i2c  nv /usr/local/bin/ ;\
 		sudo mkdir -p /var/nv ;\
 		sudo cp nv.service /etc/systemd/system/ ;\
 	fi
@@ -33,7 +33,7 @@ stop:
 run: stop install
 	nv -d -dd -dc -di
 
-debug: nv
+debug: sync nv
 	sudo gdb --args nv -d -dd -dc -di -nl -nw
 
 fonts: display/fontconvert/fontconvert2go

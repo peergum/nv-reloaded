@@ -15,6 +15,7 @@ fontconvert: fontconvert.c
 	strip $@
 
 importfonts:
+	rm -fr ../Fonts ../fonts-go
 	./convert.sh
 
 clean:

@@ -49,7 +49,7 @@ var (
 )
 
 func (fnPanel *FnPanel) Init(view *display.View) (views []*display.View) {
-	fnPanel.view = view
+	fnPanel.view = view //.NewView(0, 0, view.W, view.H, 1)
 	view.Fill(0, display.White, display.Black).
 		SetTextArea(&fonts.CourierStd20pt8b, 0, 0).
 		Update()

@@ -23,43 +23,54 @@ import (
 	"time"
 )
 
-var (
-	alertBox      *Window
-	alertBoxTimer *time.Timer
-)
+type AlertBox struct {
+	*Window
+	timer       *time.Timer
+	ShouldClose bool
+}
+
+var alertBox *AlertBox
 
 func (window *Window) AlertBox(text string, duration time.Duration) {
 	// if alert already open, cancel it first
 	if alertBox != nil {
-		window.CancelAlert()
+		CancelAlertBox()
 	}
-	alertBox = window.NewCenteredWindow(WindowOptions{
-		TitleBar:     false,
-		Border:       5,
-		BorderColor:  Black,
-		BgColor:      Gray13,
-		Transparency: 0,
-		Radius:       40,
-	})
-	alertBox.View.
+	alertBox = &AlertBox{
+		Window: window.NewCenteredWindow(WindowOptions{
+			TitleBar:     false,
+			Border:       5,
+			BorderColor:  Black,
+			BgColor:      Gray13,
+			Transparency: 0,
+			Radius:       40,
+		}),
+	}
+	alertBox.
 		SetTextArea(&fonts.IsoMetrixNF_Bold24pt8b, 10, 10).
 		WriteCenteredIn(0, 0, alertBox.InnerW, alertBox.InnerH, text, Black, Gray13).
 		Update()
 
 	if duration > 0 {
-		alertBoxTimer = time.AfterFunc(duration, func() {
-			window.CancelAlert()
+		alertBox.timer = time.AfterFunc(duration, func() {
+			alertBox.ShouldClose = true
 		})
 	}
 }
 
-func (window *Window) CancelAlert() {
+func CheckAlertBox() {
+	if alertBox != nil && alertBox.ShouldClose {
+		CancelAlertBox()
+	}
+}
+
+func CancelAlertBox() {
 	if alertBox != nil {
 		alertBox.Hide()
-		alertBox = nil
-		if alertBoxTimer != nil {
-			alertBoxTimer.Stop()
-			alertBoxTimer = nil
+		if alertBox.timer != nil {
+			alertBox.timer.Stop()
+			alertBox.timer = nil
 		}
 	}
+	alertBox = nil
 }

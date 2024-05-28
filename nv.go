@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	it8951 "github.com/peergum/IT8951-go"
+	"github.com/peergum/pi-sugar"
 	"log"
 	"nv/content"
 	"nv/display"
@@ -47,7 +48,7 @@ const (
 	defaultStatsMargin = 10  // defines the distance from the stats window to the top-right embedding window
 	wifiWidth          = 800
 	wifiHeight         = 600
-	screenBgColor      = display.Gray14
+	screenBgColor      = display.White
 )
 
 var (
@@ -76,10 +77,13 @@ var (
 	statsWindow *display.Window
 	wifiWindow  *display.Window
 	alertBox    *display.Window
+	statusBar   *display.StatusBar
 
 	currentDoc *content.Document
 	stats      *content.Stats
 	wifiPanel  *content.WifiPanel
+
+	wifiActive = true
 
 	metaKey uint16
 
@@ -116,9 +120,26 @@ func main() {
 	signal.Notify(signalChannel, os.Interrupt, os.Kill)
 	go signalHandler(signalChannel)
 
+	if err := pi_sugar.Init(); err != nil {
+		Debug("Pi Sugar not available")
+	}
+	defer pi_sugar.End()
 	defer it8951.Close()
 	defer terminate()
 
+	piSugar, err := pi_sugar.NewPiSugar()
+	if err != nil {
+		Debug("No Pi Sugar detected: %v", err)
+	}
+
+	Debug("PiSugar: %s", piSugar)
+
+	piSugar.Refresh()
+
+	display.InitDisplay()
+	go display.ScreenUpdater() // start background updater
+
+	//os.Exit(0)
 	for shouldRestart || freshStart {
 		Debug("%s starting", nv())
 		Debug("%s", copyright)
@@ -134,10 +155,10 @@ func main() {
 		eventChannel := make(chan bool, 10)
 		go input.Search(eventChannel)
 
-		display.InitDisplay()
 		display.InitScreen()
-		display.Screen.View.Fill(0, screenBgColor, display.Black).Update()
+		display.Screen.View.Fill(0, display.White, display.Black).Update()
 
+		statusBar = display.Screen.NewStatusBar(screenBgColor)
 		mainWindow = display.Screen.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
 			Title:        "Let's Do This!",
 			TitleBar:     true,
@@ -145,6 +166,7 @@ func main() {
 			BgColor:      display.White,
 			BorderColor:  display.Black,
 			Transparency: 0,
+			StatusBar:    statusBar,
 		})
 
 		if noWelcome {
@@ -154,7 +176,6 @@ func main() {
 			welcome := &content.Welcome{}
 			mainWindow.SetContent(welcome, 150, 150).Load()
 		}
-		statusBar := display.Screen.NewStatusBar()
 		//fnNewDocument()
 		freshStart = false
 		shouldTerminate = false
@@ -163,9 +184,11 @@ func main() {
 		heartBeatTicker := time.NewTicker(time.Duration(1000) * time.Millisecond)
 	mainLoop:
 		for !shouldTerminate && !shouldRestart {
+			display.CheckAlertBox() // close alertbox if marked that way
+
 			select {
 			case <-heartBeatTicker.C:
-				statusBar.Refresh()
+				statusBar.Refresh(piSugar)
 			case kbd := <-keyboardChannel:
 				if kbd == nil {
 					panic("Keyboard search failed")
@@ -178,7 +201,7 @@ func main() {
 					mainWindow.AlertBox(fmt.Sprintf("%s Found", kbd.Name), 1000*time.Millisecond)
 				}
 			case event := <-keyChannel:
-				mainWindow.CancelAlert()
+				display.CancelAlertBox()
 				//Debug("Received event: %v", event)
 				if event.TypeName == "EV_KEY" && event.KeyName == "KEY_ESC" && event.Value == 1 {
 					Debug("FN Toggle")
@@ -212,6 +235,8 @@ func main() {
 			}
 		}
 		heartBeatTicker.Stop()
+
+		statusBar.Close() // ensure the go routine ends
 		Debug("We're done")
 		eventChannel <- true
 
@@ -264,6 +289,7 @@ func main() {
 			//	Update()
 		}
 	}
+	display.UpdateScreen(nil)
 }
 
 func terminate() {
