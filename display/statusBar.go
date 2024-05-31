@@ -36,6 +36,8 @@ const (
 	batteryViewWidth  = 50
 	batteryValueWidth = 100
 	wifiViewWidth     = 50
+	btViewWidth       = 50
+	kbdViewWidth      = 90
 )
 
 type StatusBar struct {
@@ -43,19 +45,35 @@ type StatusBar struct {
 	battery           *View
 	batteryValue      *View
 	wifi              *View
+	bt                *View
+	keyboard          *View
 	W                 int
+	heartBeatTicker   *time.Ticker
 	iconRefreshTicker *time.Ticker
+	piSugar           *pi_sugar.PiSugar
+	done              bool
+	DoneChannel       chan bool
 }
 
 var (
-	batteryIconIndex           = 0
-	batteryMinIconIndex        = 0 // used for charging moving icon
-	wifiIconIndex              = 0
-	batteryBlinkState          = false
-	wifiActive                 = true
-	wifiIcon            string = iconWifi0 // default = show no icon
-	done                       = false
-	forceCheck                 = false
+	batteryIconIndex            = 0
+	batteryMinIconIndex         = 0 // used for charging moving icon
+	wifiIconIndex               = 0
+	batteryBlinkState           = false
+	wifiActive                  = true
+	wifiIcon             string = iconWifi0 // default = show no icon
+	btActive                    = true
+	kbdActive                   = true
+	btIcon               string = iconBtOn // default = show no icon
+	kbdIcon                     = iconNoKeyboard
+	done                        = false
+	forceCheck                  = true
+	lastWifiIcon         string
+	lastBtIcon           string
+	lastKbdIcon          string
+	lastBatteryIconIndex int
+	lastBatteryValue     int
+	lastTimestamp        string
 )
 
 var batteryIcons []string = []string{
@@ -74,7 +92,7 @@ var wifiIcons []string = []string{
 }
 var wifiOffIcon = iconWifiOff
 
-func (view *View) NewStatusBar(bgColor it8951.Color) (statusBar *StatusBar) {
+func (view *View) NewStatusBar(piSugar *pi_sugar.PiSugar, bgColor it8951.Color) (statusBar *StatusBar) {
 	pos := dateBarWidth
 	dateView := view.NewView(view.W-pos, 0, dateBarWidth, titleHeight, 1)
 	pos += batteryViewWidth
@@ -82,14 +100,23 @@ func (view *View) NewStatusBar(bgColor it8951.Color) (statusBar *StatusBar) {
 	pos += batteryValueWidth
 	batteryValueView := view.NewView(view.W-pos, 0, batteryValueWidth, titleHeight, 1)
 	pos += wifiViewWidth
-	wifiIconView := view.NewView(view.W-pos, 0, batteryViewWidth, titleHeight, 1)
+	wifiIconView := view.NewView(view.W-pos, 0, wifiViewWidth, titleHeight, 1)
+	pos += btViewWidth
+	btIconView := view.NewView(view.W-pos, 0, btViewWidth, titleHeight, 1)
+	pos += kbdViewWidth
+	kbdIconView := view.NewView(view.W-pos, 0, kbdViewWidth, titleHeight, 1)
 	statusBar = &StatusBar{
 		date:              dateView,
 		battery:           batteryIconView,
 		batteryValue:      batteryValueView,
 		wifi:              wifiIconView,
-		W:                 dateBarWidth + batteryViewWidth + batteryValueWidth + wifiViewWidth,
+		bt:                btIconView,
+		keyboard:          kbdIconView,
+		W:                 dateBarWidth + batteryViewWidth + batteryValueWidth + wifiViewWidth + btViewWidth,
+		heartBeatTicker:   time.NewTicker(time.Duration(1000) * time.Millisecond),
 		iconRefreshTicker: time.NewTicker(time.Duration(5000) * time.Millisecond),
+		piSugar:           piSugar,
+		DoneChannel:       make(chan bool),
 	}
 
 	dateView.
@@ -100,6 +127,8 @@ func (view *View) NewStatusBar(bgColor it8951.Color) (statusBar *StatusBar) {
 		SetTextArea(&fonts.UbuntuSans_Bold16pt8b, 0, 0).
 		BgColor = uint16(bgColor)
 	wifiIconView.Fill(0, White, Black).Update()
+	btIconView.Fill(0, White, Black).Update()
+	kbdIconView.Fill(0, White, Black).Update()
 	return statusBar
 }
 
@@ -108,18 +137,53 @@ func (statusBar *StatusBar) SetWifiState(enabled bool) {
 	forceCheck = true
 }
 
-func (statusBar *StatusBar) Close() {
-	done = true
-	statusBar.iconRefreshTicker.Stop()
+func (statusBar *StatusBar) SetBtState(enabled bool) {
+	btActive = enabled
+	forceCheck = true
 }
 
-func (statusBar *StatusBar) Refresh(piSugar *pi_sugar.PiSugar) {
+func (statusBar *StatusBar) SetKbdState(enabled bool) {
+	kbdActive = enabled
+	forceCheck = true
+}
+
+func (statusBar *StatusBar) Close() {
+	statusBar.done = true
+}
+
+func (statusBar *StatusBar) ForceRefresh() {
+	lastBtIcon = ""
+	lastKbdIcon = ""
+	lastWifiIcon = ""
+	lastBatteryValue = -1
+	lastTimestamp = ""
+}
+
+func (statusBar *StatusBar) Run() {
+	statusBar.done = false
+	for !statusBar.done {
+		select {
+		case <-statusBar.heartBeatTicker.C:
+			statusBar.Refresh()
+		default:
+		}
+	}
+	statusBar.heartBeatTicker.Stop()
+	statusBar.iconRefreshTicker.Stop()
+	statusBar.DoneChannel <- true
+	Debug("status bar done")
+}
+
+func (statusBar *StatusBar) Refresh() {
+	piSugar := statusBar.piSugar
 	select {
 	case <-statusBar.iconRefreshTicker.C:
+		Debug("force check")
 		forceCheck = true
 	default:
 	}
 	if forceCheck {
+		forceCheck = false
 		// check battery
 		piSugar.Refresh()
 		if wifiActive {
@@ -143,13 +207,43 @@ func (statusBar *StatusBar) Refresh(piSugar *pi_sugar.PiSugar) {
 					}
 					// we don't use signal strength for now
 					//signal := strings.Split(text, "=")[2]
-					break
 				}
 			}
 			wifiIcon = wifiIcons[wifiIconIndex]
 		} else {
 			wifiIcon = wifiOffIcon
 		}
+		//check bt status, by default off
+		btActive = false
+		cmd := exec.Command("/usr/bin/bluetoothctl", "show")
+		var out []byte
+		var err error
+		if out, err = cmd.Output(); err != nil {
+			Debug("Err: %v", err)
+		}
+		scanner := bufio.NewScanner(bytes.NewReader(out))
+		scanner.Split(bufio.ScanLines)
+		for scanner.Scan() {
+			text := scanner.Text()
+			Debug("%s", text)
+			if strings.Contains(text, "Powered:") &&
+				strings.Contains(text, "yes") {
+				btActive = true
+				Debug("BT is on")
+				// we don't use signal strength for now
+				//signal := strings.Split(text, "=")[2]
+			}
+		}
+	}
+	if btActive {
+		btIcon = iconBtOn
+	} else {
+		btIcon = iconBtOff
+	}
+	if kbdActive {
+		kbdIcon = iconKeyboard
+	} else {
+		kbdIcon = iconNoKeyboard
 	}
 	// define icons
 	batteryCharge := piSugar.Charge()
@@ -173,39 +267,70 @@ func (statusBar *StatusBar) Refresh(piSugar *pi_sugar.PiSugar) {
 	default:
 	}
 	if power {
-		batteryIconIndex = batteryMinIconIndex + (batteryIconIndex+1)%(5-batteryMinIconIndex)
+		batteryIconIndex = (batteryIconIndex + 1) % 5
+		if batteryIconIndex < batteryMinIconIndex-1 {
+			batteryIconIndex = batteryMinIconIndex - 1
+		}
 		batteryBlinkState = true
 	} else {
 		batteryIconIndex = batteryMinIconIndex
 	}
-	dateBar := statusBar.date
-	dateBar.Fill(0, White, Black).
-		WriteCenteredIn(0,
-			0,
-			dateBar.W,
-			dateBar.H,
-			time.Now().Format("Mon Jan 2 03:04:05 PM"),
-			Black, it8951.Color(Screen.BgColor)).
-		Update()
+	now := time.Now().Format("Mon Jan 2 03:04:05 PM")
+	if lastTimestamp != now {
+		lastTimestamp = now
+		dateBar := statusBar.date
+		dateBar.Fill(0, White, Black).
+			WriteCenteredIn(0,
+				0,
+				dateBar.W,
+				dateBar.H,
+				now,
+				Black, it8951.Color(Screen.BgColor)).
+			Update()
+	}
 
-	wifiIconView := statusBar.wifi
-	if wifiIconBar, err := wifiIconView.LoadBitmapVCenteredAt(0, wifiIcon, 1); err == nil {
-		wifiIconBar.Update()
-	}
-	batteryIconView := statusBar.battery
-	if batteryIconBar, err := batteryIconView.LoadBitmapVCenteredAt(0, batteryIcons[batteryIconIndex], 1); err == nil {
-		if !batteryBlinkState {
-			batteryIconBar.Fill(0, White, White)
+	if lastWifiIcon != wifiIcon {
+		wifiIconView := statusBar.wifi
+		if wifiIconBar, err := wifiIconView.LoadBitmapVCenteredAt(0, wifiIcon, 1); err == nil {
+			wifiIconBar.Update()
+			lastWifiIcon = wifiIcon
 		}
-		batteryIconBar.Update()
 	}
-	batteryValueView := statusBar.batteryValue
-	batteryValueView.Fill(0, White, Black).
-		WriteCenteredIn(0,
-			0,
-			batteryValueView.W,
-			batteryValueView.H,
-			fmt.Sprintf("%d%%", piSugar.Charge()),
-			Black, it8951.Color(Screen.BgColor)).
-		Update()
+	if lastBatteryIconIndex != batteryIconIndex {
+		batteryIconView := statusBar.battery
+		if batteryIconBar, err := batteryIconView.LoadBitmapVCenteredAt(0, batteryIcons[batteryIconIndex], 1); err == nil {
+			lastBatteryIconIndex = batteryIconIndex
+			if !batteryBlinkState {
+				lastBatteryIconIndex = -1 // icon off
+				batteryIconBar.Fill(0, White, White)
+			}
+			batteryIconBar.Update()
+		}
+	}
+	if lastBatteryValue != piSugar.Charge() {
+		lastBatteryValue = piSugar.Charge()
+		batteryValueView := statusBar.batteryValue
+		batteryValueView.Fill(0, White, Black).
+			WriteCenteredIn(0,
+				0,
+				batteryValueView.W,
+				batteryValueView.H,
+				fmt.Sprintf("%d%%", lastBatteryValue),
+				Black, it8951.Color(Screen.BgColor)).
+			Update()
+	}
+	if lastBtIcon != btIcon {
+		btIconView := statusBar.bt
+		if btIconBar, err := btIconView.LoadBitmapVCenteredAt(0, btIcon, 1); err == nil {
+			btIconBar.Update()
+			lastBtIcon = btIcon
+		}
+	}
+	if lastKbdIcon != kbdIcon {
+		kbdIconView := statusBar.keyboard
+		if kbdIconBar, err := kbdIconView.LoadBitmapVCenteredAt(0, kbdIcon, 1); err == nil {
+			kbdIconBar.Update()
+			lastKbdIcon = kbdIcon
+		}
+	}
 }

@@ -162,6 +162,14 @@ func (document *Document) Load() {
 	view.SetCursor(0, 0)
 	//view.SetCursor(view.InnerX+view.TextArea.MarginX, view.InnerY+view.TextArea.MarginY+paragraphSpacing)
 
+	spinner := view.NewSpinner("Loading...")
+	doneChannel := make(chan bool)
+	go spinner.Run(doneChannel)
+	go document.loader(doneChannel)
+	<-spinner.Done // wait for spinner to end
+}
+
+func (document *Document) loader(doneChannel chan<- bool) {
 	document.Words = &Element{} // create empty first element
 	// then a first paragraph pointing to that element
 	document.Paragraphs = &Paragraph{
@@ -180,8 +188,8 @@ func (document *Document) Load() {
 		document.Modified = false
 		Debug("New document")
 		//view.SetCursor(view.InnerX+view.TextArea.MarginX+paragraphIndent, view.InnerY+view.TextArea.MarginY+paragraphSpacing)
-		view.SetCursor(0, 0)
 		document.Ready = true
+		doneChannel <- true
 		return
 	}
 	var filename string
@@ -223,6 +231,7 @@ func (document *Document) Load() {
 	document.scanLines()
 	Debug("Document loaded: %s (%d paragraphs, %d words, %d lines)", document.Filename, document.pCount, document.wCount, document.lCount)
 	document.Ready = true
+	doneChannel <- true
 }
 
 func (document *Document) scanWords(lineScanner *bufio.Scanner) {
@@ -418,7 +427,7 @@ func (document *Document) Print() {
 			text += string(elem.before) + string(elem.word) + string(elem.after)
 			view.TextArea.SetFont(getFont(elem.emphasis))
 			view.SetCursor(x, y)
-			view.Write(text, display.Black, display.Transparent)
+			view.Write(text, display.Black, display.White)
 			x += elem.xWidth + spaceSize
 			text = ""
 		}

@@ -115,7 +115,7 @@ func (list *SSIDList) String() (res string) {
 	return res
 }
 
-func (list *SSIDList) GetValues() {
+func (list *SSIDList) GetValues(doneChannel chan<- bool) {
 	cmd := exec.Command("/usr/sbin/iwlist", "wlan0", "scan")
 	var out []byte
 	var err error
@@ -175,6 +175,7 @@ func (list *SSIDList) GetValues() {
 		}
 	}
 	sort.Sort(list)
+	doneChannel <- true
 	//Debug("%s", list)
 }
 
@@ -182,9 +183,13 @@ func (wifiPanel *WifiPanel) Init(view *display.View) (views []*display.View) {
 	wifiPanel.view = view.NewView(0, 0, view.InnerW, view.InnerH, 4)
 	wifiPanel.view.Fill(1, display.White, display.Black).
 		SetTextArea(&fonts.IsoMetrixNF20pt8b, 20, 20).
-		WriteCenteredIn(0, 0, view.InnerW-2*view.TextArea.MarginX, view.InnerH-2*view.TextArea.MarginY, "Scanning...", display.Black, it8951.Color(view.BgColor)).
 		Update()
-	ssidList.GetValues()
+	doneChannel := make(chan bool)
+	spinner := wifiPanel.view.NewSpinner("Scanning WiFi")
+	go spinner.Run(doneChannel)
+	ssidList.GetValues(doneChannel)
+	<-spinner.Done // wait for spinner
+	wifiPanel.view.Update()
 	wifiPanel.Panel = &Panel{
 		InputFields: InputFields{
 			&InputField{
@@ -208,7 +213,7 @@ func (wifiPanel *WifiPanel) Init(view *display.View) (views []*display.View) {
 }
 
 func (wifiPanel *WifiPanel) GetTitle() string {
-	return "Wifi Configuration"
+	return "WiFi Setup"
 }
 func (wifiPanel *WifiPanel) Load() {
 
@@ -216,7 +221,7 @@ func (wifiPanel *WifiPanel) Load() {
 func (wifiPanel *WifiPanel) Save()    {}
 func (wifiPanel *WifiPanel) Refresh() {}
 func (wifiPanel *WifiPanel) Type() string {
-	return "Wifi Configuration"
+	return "wifi"
 }
 
 func (wifiPanel *WifiPanel) Print() {

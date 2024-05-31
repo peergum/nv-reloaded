@@ -44,6 +44,7 @@ func (window *Window) AlertBox(text string, duration time.Duration) {
 			BgColor:      Gray13,
 			Transparency: 0,
 			Radius:       40,
+			Bpp:          1,
 		}),
 	}
 	alertBox.

@@ -41,10 +41,13 @@ const (
 )
 
 var (
-	screenUpdateChannel chan *ScreenUpdate = make(chan *ScreenUpdate, 2)
+	screenUpdateChannel chan *ScreenUpdate = make(chan *ScreenUpdate, 20)
 )
 
 func UpdateScreen(update *ScreenUpdate) {
+	if update != nil {
+		update.View.buffer.Lock() // lock buffer for writing
+	}
 	screenUpdateChannel <- update
 }
 
@@ -55,7 +58,9 @@ func ScreenUpdater() {
 		case update := <-screenUpdateChannel:
 			// check if we need to terminate
 			if update == nil {
+				Debug("ScreenUpdater requested to terminate")
 				done = true
+				break
 			}
 			Debug("ScreenUpdater received update")
 			view := update.View
@@ -87,6 +92,7 @@ func ScreenUpdater() {
 				}
 			default:
 			}
+			update.View.buffer.Unlock() // unlock when we're done
 		}
 	}
 }

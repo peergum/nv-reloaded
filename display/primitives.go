@@ -26,23 +26,25 @@ import (
 )
 
 type Buffer struct {
-	X    int // actual buffer x location
-	Y    int // actual buffer y location
-	ww   int // ww width in words
-	wh   int // hh height in words
-	inX  int // visible x
-	inY  int // visible y
-	inW  int // visible w
-	inH  int // visible h
-	bpp  int // buffer bpp
-	data it8951.DataBuffer
+	X         int // actual buffer x location
+	Y         int // actual buffer y location
+	ww        int // ww width in words
+	wh        int // hh height in words
+	inX       int // visible x
+	inY       int // visible y
+	inW       int // visible w
+	inH       int // visible h
+	bpp       int // buffer bpp
+	data      it8951.DataBuffer
+	writeLock chan bool // semaphore
+	index     int
 }
 
 type View struct {
 	X, Y, W, H                     int // absolute coordinates
 	InnerX, InnerY, InnerW, InnerH int // absolute internal coordinates
 	BgColor                        uint16
-	buffer                         Buffer
+	buffer                         *Buffer
 	TextArea                       TextArea
 	content                        Content
 	Xb, Yb, Wb, Hb                 int
@@ -70,6 +72,10 @@ const (
 	Transparent it8951.Color = 0xffff
 )
 
+var (
+	bufferIndex int
+)
+
 func (view *View) setBuffer(bpp int) {
 	ppw := 2
 	if bpp > 1 {
@@ -80,24 +86,27 @@ func (view *View) setBuffer(bpp int) {
 	xmax := ((view.X+view.W-1)/ppw+1)*ppw - 1 // high word limit
 	ww := (xmax - xmin + 1) / ppw
 	wh := view.H
-	view.buffer = Buffer{
-		X:    xmin,
-		Y:    view.Y,
-		ww:   ww,
-		wh:   wh,
-		inX:  view.X,
-		inY:  view.Y,
-		inW:  view.W,
-		inH:  view.H,
-		bpp:  bpp,
-		data: make(it8951.DataBuffer, ww*wh),
+	view.buffer = &Buffer{
+		X:         xmin,
+		Y:         view.Y,
+		ww:        ww,
+		wh:        wh,
+		inX:       view.X,
+		inY:       view.Y,
+		inW:       view.W,
+		inH:       view.H,
+		bpp:       bpp,
+		data:      make(it8951.DataBuffer, ww*wh),
+		writeLock: make(chan bool, 1),
+		index:     bufferIndex,
 	}
+	bufferIndex++
 	Debug("Set writing buffer words=(%d x %d) (xmin=%d/xmax=%d,y=%d) bpp=%d", ww, wh, xmin, xmax, view.Y, bpp)
 }
 
 func (view *View) NewView(x, y, w, h int, bpp int) *View {
 	Debug("NewView (%d,%d,%d,%d bpp=%d)", x, y, w, h, bpp)
-	newView := View{
+	newView := &View{
 		X: view.InnerX + x,
 		Y: view.InnerY + y,
 		W: min(view.InnerW, w),
@@ -114,7 +123,7 @@ func (view *View) NewView(x, y, w, h int, bpp int) *View {
 
 	//newView.parent = view
 	Debug("NewView = (%d,%d,%d,%d)", newView.X, newView.Y, newView.W, newView.H)
-	return &newView
+	return newView
 }
 
 //func setPixel(x int, buffer it8951.DataBuffer, offset int, ppw int, color uint16) {
@@ -229,55 +238,55 @@ func (view *View) TopRoundedRectangle(x, y, w, h int, stroke int, fgColor it8951
 	return view
 }
 
-func (view *View) copyRectangle(x, y, w, h int) (buffer it8951.DataBuffer) {
-	buffer = make(it8951.DataBuffer, w*h/2)
-	Debug("Allocated %d bytes, orig cap = %d", w*h/2, cap(view.buffer.data))
-	X := view.X
-	Y := view.Y
-	W := view.W
-	H := view.H
-	var src int
-	var dst int
-	Debug("X,Y,W,H-x,y,w,h = %d,%d,%d,%d-%d,%d,%d,%d", X, Y, W, H, x, y, w, h)
-	for i := 0; i < h; i++ {
-		for j := 0; j < w; j++ {
-			src = (y+i)*W/2 + (x+j)/2
-			dst = i*(w/2) + j/2
-			//Debug("src=%d,dst=%d", src, dst)
-			//buffer[dst] |= (window.buffer[src] >> (8 * ((j + x) % 2))) << (8 * (j % 2))
-			buffer[dst] = view.buffer.data[src]
-			//if w*h/2 < 10000 {
-			//	Debug("orig (i=%d,j=%d) = %04x", i, j, buffer[dst])
-			//}
-		}
-	}
-	Debug("Copy OK")
-	return buffer
-}
+//func (view *View) copyRectangle(x, y, w, h int) (buffer it8951.DataBuffer) {
+//	buffer = make(it8951.DataBuffer, w*h/2)
+//	Debug("Allocated %d bytes, orig cap = %d", w*h/2, cap(view.buffer.data))
+//	X := view.X
+//	Y := view.Y
+//	W := view.W
+//	H := view.H
+//	var src int
+//	var dst int
+//	Debug("X,Y,W,H-x,y,w,h = %d,%d,%d,%d-%d,%d,%d,%d", X, Y, W, H, x, y, w, h)
+//	for i := 0; i < h; i++ {
+//		for j := 0; j < w; j++ {
+//			src = (y+i)*W/2 + (x+j)/2
+//			dst = i*(w/2) + j/2
+//			//Debug("src=%d,dst=%d", src, dst)
+//			//buffer[dst] |= (window.buffer[src] >> (8 * ((j + x) % 2))) << (8 * (j % 2))
+//			buffer[dst] = view.buffer.data[src]
+//			//if w*h/2 < 10000 {
+//			//	Debug("orig (i=%d,j=%d) = %04x", i, j, buffer[dst])
+//			//}
+//		}
+//	}
+//	Debug("Copy OK")
+//	return buffer
+//}
 
-func (view *View) updateRectangle(buffer it8951.DataBuffer, x, y, w, h int) {
-	Debug("Allocated %d bytes, orig cap = %d", w*h/2, cap(view.buffer.data))
-	X := view.X
-	Y := view.Y
-	W := view.W
-	H := view.H
-	var src int
-	var dst int
-	Debug("X,Y,W,H-x,y,w,h = %d,%d,%d,%d-%d,%d,%d,%d", X, Y, W, H, x, y, w, h)
-	for i := 0; i < h; i++ {
-		for j := 0; j < w; j++ {
-			src = (y+i)*W/2 + (x+j)/2
-			dst = i*(w/2) + j/2
-			//Debug("src=%d,dst=%d", src, dst)
-			//buffer[dst] |= (window.buffer[src] >> (8 * ((j + x) % 2))) << (8 * (j % 2))
-			view.buffer.data[src] = buffer[dst]
-			//if w*h/2 < 10000 {
-			//	Debug("orig (i=%d,j=%d) = %04x", i, j, buffer[dst])
-			//}
-		}
-	}
-	Debug("Update OK")
-}
+//func (view *View) updateRectangle(buffer it8951.DataBuffer, x, y, w, h int) {
+//	Debug("Allocated %d bytes, orig cap = %d", w*h/2, cap(view.buffer.data))
+//	X := view.X
+//	Y := view.Y
+//	W := view.W
+//	H := view.H
+//	var src int
+//	var dst int
+//	Debug("X,Y,W,H-x,y,w,h = %d,%d,%d,%d-%d,%d,%d,%d", X, Y, W, H, x, y, w, h)
+//	for i := 0; i < h; i++ {
+//		for j := 0; j < w; j++ {
+//			src = (y+i)*W/2 + (x+j)/2
+//			dst = i*(w/2) + j/2
+//			//Debug("src=%d,dst=%d", src, dst)
+//			//buffer[dst] |= (window.buffer[src] >> (8 * ((j + x) % 2))) << (8 * (j % 2))
+//			view.buffer.data[src] = buffer[dst]
+//			//if w*h/2 < 10000 {
+//			//	Debug("orig (i=%d,j=%d) = %04x", i, j, buffer[dst])
+//			//}
+//		}
+//	}
+//	Debug("Update OK")
+//}
 
 //	func Rectangle(x,y,w,h int, stroke int, bpp int, bgColor it8951.Color, fgColor it8951.Color) {
 //		DrawHLine(x, y, w, stroke, bpp, fgColor)
@@ -290,6 +299,8 @@ func (view *View) FillRectangle(x, y, w, h int, stroke int, bgColor it8951.Color
 	buffer := view.buffer
 	var color uint16
 	var transparent bool
+	// lock buffer for writing and/or wait for refresh to finish
+	buffer.Lock()
 	for yy := y; yy < y+h; yy++ {
 		for xx := x; xx < x+w; xx++ {
 			transparent = false
@@ -307,6 +318,8 @@ func (view *View) FillRectangle(x, y, w, h int, stroke int, bgColor it8951.Color
 			}
 		}
 	}
+	// unlock buffer
+	buffer.Unlock()
 	return view
 }
 
@@ -337,6 +350,8 @@ func (view *View) FillTopRoundedRectangle(x, y, w, h int, stroke int, bgColor it
 func (view *View) drawCircleHelper(x0, y0, r int, corners int, stroke int, color it8951.Color) {
 	c := uint16(color)
 	//r := radius
+	// lock buffer for writing and/or wait for refresh to finish
+	view.buffer.Lock()
 	for s := stroke; s > 0; s-- {
 		f := 1 - r
 		ddFx := 1
@@ -371,6 +386,8 @@ func (view *View) drawCircleHelper(x0, y0, r int, corners int, stroke int, color
 			}
 		}
 	}
+	// unlock buffer
+	view.buffer.Unlock()
 }
 
 // same as drawCircleHelper but fill the arc
@@ -388,7 +405,6 @@ func (view *View) fillCircleHelper(x0, y0, r int,
 	py := y
 
 	delta++ // Avoid some +1's in the loop
-
 	for x < y {
 		if f >= 0 {
 			y--
@@ -427,85 +443,85 @@ func (view *View) Update() *View {
 }
 
 func (view *View) Refresh(x, y, w, h int) *View {
-	//UpdateScreen(&ScreenUpdate{
-	//	view,
-	//	x, y, w, h,
-	//	Refresh,
-	//	nil,
-	//	0, 0,
-	//	0,
-	//	0,
-	//})
+	UpdateScreen(&ScreenUpdate{
+		view,
+		x, y, w, h,
+		Refresh,
+		nil,
+		0, 0,
+		0,
+		0,
+	})
 
-	imageInfo := it8951.LoadImgInfo{
-		EndianType:       it8951.LoadImgLittleEndian,
-		PixelFormat:      pixelFormat(view.buffer.bpp),
-		Rotate:           it8951.Rotate0,
-		SourceBufferAddr: view.buffer.data,
-		TargetMemAddr:    DeviceInfo.TargetAddress(),
-	}
-
-	areaInfo := it8951.AreaImgInfo{
-		X: uint16(view.X),
-		Y: uint16(view.Y),
-		W: uint16(view.W),
-		H: uint16(view.H),
-	}
-	imageInfo.HostAreaPackedPixelWrite(areaInfo, view.buffer.bpp, true)
-	mode := it8951.GC16Mode
-	if view.buffer.bpp == 1 {
-		mode = it8951.A2Mode
-		it8951.Display1bpp(uint16(x), uint16(y), uint16(w), uint16(h), mode, DeviceInfo.TargetAddress(), 0xff, 0x00)
-	} else {
-		it8951.DisplayArea(uint16(x), uint16(y), uint16(w), uint16(h), mode)
-		it8951.WaitForDisplayReady()
-	}
+	//imageInfo := it8951.LoadImgInfo{
+	//	EndianType:       it8951.LoadImgLittleEndian,
+	//	PixelFormat:      pixelFormat(view.buffer.bpp),
+	//	Rotate:           it8951.Rotate0,
+	//	SourceBufferAddr: view.buffer.data,
+	//	TargetMemAddr:    DeviceInfo.TargetAddress(),
+	//}
+	//
+	//areaInfo := it8951.AreaImgInfo{
+	//	X: uint16(view.X),
+	//	Y: uint16(view.Y),
+	//	W: uint16(view.W),
+	//	H: uint16(view.H),
+	//}
+	//imageInfo.HostAreaPackedPixelWrite(areaInfo, view.buffer.bpp, true)
+	//mode := it8951.GC16Mode
+	//if view.buffer.bpp == 1 {
+	//	mode = it8951.A2Mode
+	//	it8951.Display1bpp(uint16(x), uint16(y), uint16(w), uint16(h), mode, DeviceInfo.TargetAddress(), 0xff, 0x00)
+	//} else {
+	//	it8951.DisplayArea(uint16(x), uint16(y), uint16(w), uint16(h), mode)
+	//	it8951.WaitForDisplayReady()
+	//}
 	return view
 }
 
-func (view *View) DrawCentered(innerView *View, bpp int) {
-	//innerView.X = (view.X + (view.w-innerView.w)/2) / 16 * 16 // ensure word aligned
-	//innerView.Y = view.Y + (view.h-innerView.h)/2
-	view.Draw(innerView, (view.W-innerView.W)/2, (view.H-innerView.H)/2, bpp)
-}
-func (view *View) Draw(innerView *View, xOffset, yOffset int, bpp int) {
-	ppw := 16 / bpp
-
-	innerView.X = view.X + xOffset
-	innerView.Y = view.Y + yOffset
-	Debug("Loading innerView (%d,%d,%d,%d) inside view (%d,%d,%d,%d)",
-		innerView.X, innerView.Y, innerView.W, innerView.H,
-		view.X, view.Y, view.W, view.H)
-	xend := innerView.X + innerView.W - 1
-	xmin := (innerView.X / ppw) * ppw
-	xmax := (xend/ppw+1)*ppw - 1
-	ww := (xmax - xmin + 1) / ppw
-	temp := make(it8951.DataBuffer, ww*innerView.H)
-	for i := 0; i < innerView.H; i++ {
-		for x := xmin; x <= xmax; x++ {
-			if x < innerView.X || x > xend {
-				continue
-			}
-			temp[i*ww+(x-xmin)/ppw] |=
-				innerView.buffer.data[(i*innerView.W+(x-innerView.X))/ppw] >> (bpp * ((xmin - innerView.X) % ppw))
-		}
-	}
-	imageInfo := it8951.LoadImgInfo{
-		EndianType:       it8951.LoadImgLittleEndian,
-		PixelFormat:      pixelFormat(bpp),
-		Rotate:           it8951.Rotate0,
-		SourceBufferAddr: temp,
-		TargetMemAddr:    DeviceInfo.TargetAddress(),
-	}
-	areaInfo := it8951.AreaImgInfo{
-		X: uint16(innerView.X),
-		Y: uint16(innerView.Y),
-		W: uint16(innerView.W),
-		H: uint16(innerView.H),
-	}
-	imageInfo.HostAreaPackedPixelWrite(areaInfo, bpp, true)
-	it8951.DisplayArea(uint16(innerView.X), uint16(innerView.Y), uint16(innerView.W), uint16(innerView.H), it8951.GC16Mode)
-}
+//func (view *View) DrawCentered(innerView *View, bpp int) {
+//	//innerView.X = (view.X + (view.w-innerView.w)/2) / 16 * 16 // ensure word aligned
+//	//innerView.Y = view.Y + (view.h-innerView.h)/2
+//	view.Draw(innerView, (view.W-innerView.W)/2, (view.H-innerView.H)/2, bpp)
+//}
+//func (view *View) Draw(innerView *View, xOffset, yOffset int, bpp int) {
+//	ppw := 16 / bpp
+//
+//	innerView.X = view.X + xOffset
+//	innerView.Y = view.Y + yOffset
+//	Debug("Loading innerView (%d,%d,%d,%d) inside view (%d,%d,%d,%d)",
+//		innerView.X, innerView.Y, innerView.W, innerView.H,
+//		view.X, view.Y, view.W, view.H)
+//	xend := innerView.X + innerView.W - 1
+//	xmin := (innerView.X / ppw) * ppw
+//	xmax := (xend/ppw+1)*ppw - 1
+//	ww := (xmax - xmin + 1) / ppw
+//	temp := make(it8951.DataBuffer, ww*innerView.H)
+//	for i := 0; i < innerView.H; i++ {
+//		for x := xmin; x <= xmax; x++ {
+//			if x < innerView.X || x > xend {
+//				continue
+//			}
+//			temp[i*ww+(x-xmin)/ppw] |=
+//				innerView.buffer.data[(i*innerView.W+(x-innerView.X))/ppw] >> (bpp * ((xmin - innerView.X) % ppw))
+//		}
+//	}
+//	imageInfo := it8951.LoadImgInfo{
+//		EndianType:       it8951.LoadImgLittleEndian,
+//		PixelFormat:      pixelFormat(bpp),
+//		Rotate:           it8951.Rotate0,
+//		SourceBufferAddr: temp,
+//		TargetMemAddr:    DeviceInfo.TargetAddress(),
+//	}
+//	areaInfo := it8951.AreaImgInfo{
+//		X: uint16(innerView.X),
+//		Y: uint16(innerView.Y),
+//		W: uint16(innerView.W),
+//		H: uint16(innerView.H),
+//	}
+//	imageInfo.HostAreaPackedPixelWrite(areaInfo, bpp, true)
+//	it8951.DisplayArea(uint16(innerView.X), uint16(innerView.Y), uint16(innerView.W), uint16(innerView.H), it8951.GC16Mode)
+//}
 
 func (view *View) LoadBitmapAt(x, y int, name string, bpp int) (*View, error) {
 	bitmapView, err := view.LoadBitmap(name, bpp)
@@ -578,6 +594,8 @@ func (view *View) LoadBitmap(name string, bpp int) (*View, error) {
 	Debug("Loading bitmap: (%d x %d, offset=%d)", w, h, offset)
 	src := 0
 	// reminder: image is upside-down
+	// lock buffer for writing and/or wait for refresh to finish
+	newView.buffer.Lock()
 	for y := 0; y < newView.H; y++ {
 		for x := 0; x < newView.W; x++ {
 			color := binary.LittleEndian.Uint16(bmp[offset+src : offset+src+2])
@@ -586,6 +604,8 @@ func (view *View) LoadBitmap(name string, bpp int) (*View, error) {
 			src += 2
 		}
 	}
+	// unlock buffer
+	newView.buffer.Unlock()
 	return newView, nil
 }
 
@@ -614,6 +634,19 @@ func RGBToBpp(color uint16, bpp int) uint16 {
 	return res
 }
 
+// Lock adds a write lock on the buffer
+func (buffer *Buffer) Lock() {
+	//Debug("Locking buffer #%d", buffer.index)
+	buffer.writeLock <- true
+}
+
+// Unlock removes the write lock on the buffer
+func (buffer *Buffer) Unlock() {
+	<-buffer.writeLock
+	//Debug("Unlocked buffer #%d", buffer.index)
+}
+
+// remember to lock buffer before a group of writePixels
 func (buffer *Buffer) writePixel(x, y int, fgColor uint16) {
 	//defer func() {
 	//	if err := recover(); err != nil {
@@ -630,8 +663,8 @@ func (buffer *Buffer) writePixel(x, y int, fgColor uint16) {
 	ppw := 16 / bpp
 
 	if y-buffer.Y < 0 || y-buffer.Y >= buffer.wh || (x-buffer.X)/ppw < 0 || (x-buffer.X)/ppw >= buffer.ww {
-		Debug("error writing pixel (%d,%d) in buffer(%d,%d,%d,%d)",
-			x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)
+		//Debug("error writing pixel (%d,%d) in buffer(%d,%d,%d,%d)",
+		//	x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)
 		return
 	}
 	color := colorToBpp(fgColor, buffer.bpp) << (bpp * ((x - buffer.X) % ppw))
@@ -641,12 +674,8 @@ func (buffer *Buffer) writePixel(x, y int, fgColor uint16) {
 }
 
 func (buffer *Buffer) readPixel(x, y int) (fgColor uint16) {
-	//defer func() {
-	//	if err := recover(); err != nil {
-	//		Debug("error reading pixel (%d,%d) in buffer(%d,%d,%d,%d)",
-	//			x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)
-	//	}
-	//}()
+	// no lock is required here
+
 	bpp := buffer.bpp
 	if bpp == 1 {
 		bpp = 8 // 1bpp data is stored as 8bpp
@@ -679,27 +708,35 @@ func (buffer *Buffer) writeFillRectangle(x, y, w, h int, fgColor uint16) {
 	Debug("Write rectangle (%d,%d,%d,%d)", x, y, w, h)
 	//bpp := buffer.bpp
 	//ppw := 16 / bpp
+	// lock buffer for writing and/or wait for refresh to finish
+	buffer.Lock()
 	for i := 0; i < w; i++ {
 		for j := 0; j < h; j++ {
 			buffer.writePixel(x, y, fgColor)
-			//color := colorToBpp(fgColor, bpp) << (bpp * ((x + i - buffer.X) % ppw))
-			//mask := uint16(^(((1 << bpp) - 1) << (bpp * ((x + i - buffer.X) % ppw))))
-			//buffer.data[((y-buffer.Y+j)*buffer.ww)+(x+i-buffer.X)/ppw] &= mask
-			//buffer.data[((y-buffer.Y+j)*buffer.ww)+(x+i-buffer.X)/ppw] |= color
 		}
 	}
+	// unlock buffer
+	buffer.Unlock()
 }
 
 func (buffer *Buffer) writeFastVLine(x, y, h int, color uint16) {
+	// lock buffer for writing and/or wait for refresh to finish
+	buffer.Lock()
 	for i := 0; i < h; i++ {
 		buffer.writePixel(x, y+i, color)
 	}
+	// unlock buffer
+	buffer.Unlock()
 }
 
 func (buffer *Buffer) writeFastHLine(x, y, w int, color uint16) {
+	// lock buffer for writing and/or wait for refresh to finish
+	buffer.Lock()
 	for i := 0; i < w; i++ {
 		buffer.writePixel(x+i, y, color)
 	}
+	// unlock buffer
+	buffer.Unlock()
 }
 
 func pixelFormat(bpp int) it8951.PixelMode {
@@ -724,14 +761,32 @@ func (view *View) CopyPixels(dx, dy int, source *View, sx, sy, sw, sh int) {
 	//		view.CopyPixels(dx, dy, parent, sx, sy, sw, sh)
 	//	}
 	//}
+	// lock buffer for writing and/or wait for refresh to finish
+	source.buffer.Lock()
+	view.buffer.Lock()
 	for y := 0; y < sh; y++ {
 		for x := 0; x < sw; x++ {
 			if dx+x >= view.X && dy+y >= view.Y && dx+x < view.X+view.W && dy+y < view.Y+view.H &&
 				sx+x >= source.X && sy+y >= source.Y && sx+x < source.X+source.W && sy+y < source.Y+source.H {
-				view.buffer.writePixel(dx+x, dy+y, source.buffer.readPixel(sx+x, sy+y))
+				color := source.buffer.readPixel(sx+x, sy+y)
+				if view.buffer.bpp == 1 {
+					if color != 0x00 {
+						color = 0xff
+					}
+				} else if source.buffer.bpp == 1 {
+					color &= 0xff
+				} else if view.buffer.bpp > source.buffer.bpp {
+					color = color << (view.buffer.bpp - source.buffer.bpp)
+				} else {
+					color = color >> (source.buffer.bpp - view.buffer.bpp)
+				}
+				view.buffer.writePixel(dx+x, dy+y, color)
 			}
 		}
 	}
+	// unlock buffer
+	view.buffer.Unlock()
+	source.buffer.Unlock()
 
 	//UpdateScreen(&ScreenUpdate{
 	//	view,
@@ -744,6 +799,9 @@ func (view *View) CopyPixels(dx, dy int, source *View, sx, sy, sw, sh int) {
 }
 
 func (view *View) CopyPixelsWithTransparency(dx, dy int, source *View, sx, sy, sw, sh int, transparency float64, bgColor uint16) {
+	// lock buffer for writing and/or wait for refresh to finish
+	source.buffer.Lock()
+	view.buffer.Lock()
 	for x := 0; x < sw; x++ {
 		for y := 0; y < sh; y++ {
 			if dx+x >= view.X && dy+y >= view.Y && dx+x < view.X+view.W && dy+y < view.Y+view.H &&
@@ -754,6 +812,9 @@ func (view *View) CopyPixelsWithTransparency(dx, dy int, source *View, sx, sy, s
 			}
 		}
 	}
+	// unlock buffer
+	view.buffer.Unlock()
+	source.buffer.Unlock()
 
 	//UpdateScreen(&ScreenUpdate{
 	//	view,

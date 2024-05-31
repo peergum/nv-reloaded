@@ -84,6 +84,7 @@ var (
 	wifiPanel  *content.WifiPanel
 
 	wifiActive = true
+	btActive   = true
 
 	metaKey uint16
 
@@ -113,11 +114,18 @@ func Debug(format string, args ...interface{}) {
 	}
 }
 
+func ensureBtStarted() {
+	cmd := exec.Command("/usr/bin/btmgmt", "power", "on")
+	if err := cmd.Run(); err != nil {
+		Debug("Err: %v", err)
+	}
+}
+
 func main() {
 	flag.Parse()
 
 	// external signal handler
-	signal.Notify(signalChannel, os.Interrupt, os.Kill)
+	signal.Notify(signalChannel, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGUSR1)
 	go signalHandler(signalChannel)
 
 	if err := pi_sugar.Init(); err != nil {
@@ -131,8 +139,6 @@ func main() {
 	if err != nil {
 		Debug("No Pi Sugar detected: %v", err)
 	}
-
-	Debug("PiSugar: %s", piSugar)
 
 	piSugar.Refresh()
 
@@ -158,9 +164,11 @@ func main() {
 		display.InitScreen()
 		display.Screen.View.Fill(0, display.White, display.Black).Update()
 
-		statusBar = display.Screen.NewStatusBar(screenBgColor)
+		ensureBtStarted()
+		statusBar = display.Screen.NewStatusBar(piSugar, screenBgColor)
+
 		mainWindow = display.Screen.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
-			Title:        "Let's Do This!",
+			Title:        "NV-Reloaded",
 			TitleBar:     true,
 			Border:       1,
 			BgColor:      display.White,
@@ -181,27 +189,31 @@ func main() {
 		shouldTerminate = false
 		shouldRestart = false
 
-		heartBeatTicker := time.NewTicker(time.Duration(1000) * time.Millisecond)
+		go statusBar.Run()
+		//heartBeatTicker := time.NewTicker(time.Duration(1000) * time.Millisecond)
 	mainLoop:
 		for !shouldTerminate && !shouldRestart {
 			display.CheckAlertBox() // close alertbox if marked that way
 
 			select {
-			case <-heartBeatTicker.C:
-				statusBar.Refresh(piSugar)
+			//case <-heartBeatTicker.C:
+			//statusBar.Refresh()
 			case kbd := <-keyboardChannel:
 				if kbd == nil {
 					panic("Keyboard search failed")
 				}
 				if kbd.File == "none" {
 					Debug("No keyboard found")
+					statusBar.SetKbdState(false)
 					mainWindow.AlertBox("No Keyboard...", 0)
 				} else {
+					statusBar.SetKbdState(true)
 					Debug("Keyboard %s added", kbd.Name)
 					mainWindow.AlertBox(fmt.Sprintf("%s Found", kbd.Name), 1000*time.Millisecond)
 				}
 			case event := <-keyChannel:
 				display.CancelAlertBox()
+				//statusBar.SetKbdState(true)
 				//Debug("Received event: %v", event)
 				if event.TypeName == "EV_KEY" && event.KeyName == "KEY_ESC" && event.Value == 1 {
 					Debug("FN Toggle")
@@ -234,9 +246,10 @@ func main() {
 				currentDoc.ToggleCursor()
 			}
 		}
-		heartBeatTicker.Stop()
-
+		display.CancelAlertBox()
 		statusBar.Close() // ensure the go routine ends
+		Debug("closed status bar")
+		<-statusBar.DoneChannel // ensure status bar is off
 		Debug("We're done")
 		eventChannel <- true
 
@@ -288,6 +301,7 @@ func main() {
 			//win.Fill(0, display.White, display.Black).
 			//	Update()
 		}
+		display.ShowGallery()
 	}
 	display.UpdateScreen(nil)
 }
@@ -301,9 +315,9 @@ func signalHandler(c chan os.Signal) {
 		select {
 		case s := <-c:
 			Debug("Got signal: %v", s)
-			if s == syscall.SIGKILL || s == syscall.SIGINT || s == syscall.SIGTERM {
+			if s == syscall.SIGKILL || s == syscall.SIGINT || s == syscall.SIGTERM || s == syscall.SIGHUP {
 				shouldTerminate = true
-			} else if s == syscall.SIGHUP {
+			} else if s == syscall.SIGUSR1 {
 				shouldRestart = true
 			}
 		default:

@@ -30,7 +30,7 @@ type Panel struct {
 type InputFields []*InputField
 
 type List interface {
-	GetValues()
+	GetValues(done chan<- bool)
 }
 
 type InputField struct {

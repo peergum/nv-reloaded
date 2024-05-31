@@ -1,15 +1,16 @@
 [Unit]
 Description=NV-Reloaded Application on %I
 #After=bluetooth.target usb-gadget.target
+Before=first-boot-complete.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/nv -d -dd -dc -di
-#ExecReload=kill -USR1 $MAINPID
-#ExecStop=kill -TERM $MAINPID
+ExecStart=/usr/local/bin/nv -d
+ExecReload=kill -USR1 $MAINPID
+ExecStop=kill -TERM $MAINPID
 
 WorkingDirectory=/var/nv
-TimeoutSec=5
+TimeoutSec=10
 KillMode=mixed
 RestartKillSignal=SIGHUP
 

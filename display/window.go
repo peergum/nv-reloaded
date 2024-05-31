@@ -33,16 +33,18 @@ type WindowOptions struct {
 	Radius       int
 	TopRounded   bool
 	StatusBar    *StatusBar // nil for most windows
+	Bpp          int
 }
 
 type Window struct {
 	*View
 	WindowOptions
-	titleView *View
-	Views     []*View
-	updated   bool
-	visible   bool
-	parent    *View
+	titleView  *View
+	Views      []*View
+	updated    bool
+	visible    bool
+	parent     *View
+	titleWidth int
 }
 
 type ScreenView struct {
@@ -60,7 +62,8 @@ const (
 )
 
 var (
-	Screen ScreenView
+	Screen       ScreenView
+	titleBarFont = &fonts.SpecialElite_Regular20pt8b
 )
 
 func init() {
@@ -91,9 +94,15 @@ func (view *View) NewWindow(x, y, w, h int, options WindowOptions) *Window {
 	CancelAlertBox()
 	var window Window
 	window.parent = view
+	if options.Bpp == 0 {
+		options.Bpp = 4
+	}
 	window.WindowOptions = options
 	//if window.View == nil {
-	window.View = view.NewView(x, y, w, h, 4)
+	window.View = view.NewView(x, y, w, h, options.Bpp)
+	if options.Bpp == 1 {
+		window.View.Fill(0, options.BgColor, Black) //.Update()
+	}
 	window.Views = make([]*View, 0)
 	window.Views = append(window.Views, window.View)
 	//}
@@ -144,7 +153,7 @@ func (window *Window) Show() {
 			window.InnerH -= titleBarHeight
 			window.RefreshTitleBar()
 		}
-		it8951.WaitForDisplayReady()
+		//it8951.WaitForDisplayReady()
 		if window.content != nil {
 			window.content.Print() // updates content on screen
 			//window.Update()
@@ -162,22 +171,26 @@ func (window *Window) Hide() {
 	//window.parent.Refresh(window.X, window.Y, window.W, window.H)
 
 	//// create a temporary new view to restore parent view partially faster
-	view := Screen.NewView(window.X, window.Y, window.W, window.H, 4)
 
 	for _, parentView := range window.parent.Views {
-		////// copy content from parent
+		if parentView == window.View {
+			continue
+		}
+		//parentView.Refresh(window.X, window.Y, window.W, window.H)
+		view := Screen.NewView(window.X, window.Y, window.W, window.H, 4)
+		// copy content from parent
 		view.CopyPixels(view.X, view.Y, parentView, window.X, window.Y, window.W, window.H)
-		//for y := 0; y < window.H; y++ {
-		//	for x := 0; x < window.W; x++ {
-		//		if window.X+x >= parentView.X && window.X+x < parentView.X+parentView.W &&
-		//			window.Y+y >= parentView.Y && window.Y+y < parentView.Y+parentView.H {
-		//			view.buffer.writePixel(view.X+x, view.Y+y, parentView.buffer.readPixel(window.X+x, window.Y+y))
-		//		}
-		//	}
-		//}
+		view.Refresh(view.X, view.Y, view.W, view.H)
 	}
 
-	view.Refresh(view.X, view.Y, view.W, view.H)
+	//for _, parentView := range window.parent.Views {
+	//	if parentView == window.View {
+	//		continue
+	//	}
+	//	//	// copy content from parent
+	//	//	view.CopyPixels(view.X, view.Y, parentView, window.X, window.Y, window.W, window.H)
+	//	parentView.Refresh(window.X, window.Y, window.W, window.H)
+	//}
 
 }
 
@@ -195,63 +208,57 @@ func (window *Window) RefreshTitleBar() {
 	window.InnerY -= titleBarHeight
 	window.InnerH += titleBarHeight
 
-	actualWidth := window.W
+	currentTitleWidth := window.titleWidth
 	if window.WindowOptions.StatusBar != nil {
-		actualWidth = window.W - window.WindowOptions.StatusBar.W
+		//actualWidth = window.W - window.WindowOptions.StatusBar.W
 	}
-	for _, parent := range window.parent.Views {
-		if parent != nil {
-			window.CopyPixels(0, 0, parent, window.X, window.Y, actualWidth, titleBarHeight)
+	if currentTitleWidth > 0 {
+		for _, parent := range window.parent.Views {
+			if parent != nil {
+				window.CopyPixels(0, 0, parent, window.X, window.Y, currentTitleWidth, titleBarHeight)
+			}
 		}
+
+		window.Refresh(window.X, window.Y, currentTitleWidth, titleBarHeight)
 	}
 
-	window.Refresh(window.X, window.Y, actualWidth, titleBarHeight)
-
+	// determine title width
 	x0, y0 := 0, 0
-	window.SetTextArea(&fonts.SF_Compact_Display_Black20pt8b, 0, 0)
-	_, _, wb, _ := window.GetTextBounds(window.Title, &x0, &y0)
-	window.titleView = window.NewView(-window.Border, 0, wb+100, titleBarHeight, 4).
+	window.SetTextArea(titleBarFont, 0, 0)
+	_, _, window.titleWidth, _ = window.GetTextBounds(window.Title, &x0, &y0)
+
+	window.titleWidth += 60 // allow for some margin
+	window.titleView = window.NewView(-window.Border, 0, window.titleWidth, titleBarHeight, 4).
 		Fill(0, titleBarBgColor, Black).
-		SetTextArea(&fonts.SF_Compact_Display_Black20pt8b, 0, 0)
+		SetTextArea(titleBarFont, 0, 0)
 
-	window.InnerY += titleBarHeight
-	window.InnerH -= titleBarHeight
-
-	// prepare area
-	//if window.WindowOptions.Transparency > 0 {
-	//	for _, parent := range window.parent.Views {
-	//		window.View.CopyPixelsWithTransparency(window.View.X, window.View.Y, parent, window.X, window.Y, window.titleView.W, window.titleView.H, window.WindowOptions.Transparency, uint16(window.WindowOptions.BgColor))
-	//	}
-	//	if window.WindowOptions.TopRounded {
-	//		window.titleView.TopRoundedRectangle(0, 0, window.titleView.W/2, window.titleView.H, window.Border, window.BorderColor, window.WindowOptions.Radius).Update()
-	//	} else {
-	//		window.titleView.RoundedRectangle(0, 0, window.titleView.W/2, window.titleView.H, window.Border, window.BorderColor, window.WindowOptions.Radius).Update()
-	//	}
-	//} else {
-
-	//if window.WindowOptions.TopRounded {
 	window.titleView.FillTopRoundedRectangle(0, 0, window.titleView.W, window.titleView.H, window.WindowOptions.Border, titleBarBgColor, window.BorderColor, defaultTitleRadius)
-	//} else {
-	//	window.titleView.FillRoundedRectangle(0, 0, window.titleView.W, window.titleView.H, window.WindowOptions.Border, window.WindowOptions.BgColor, window.BorderColor, defaultTitleRadius)
-	//}
 
-	//}
-	//window.titleView.FillTopRoundedRectangle(0, 0, window.titleView.W/2, window.titleView.H, 0, titleBarBgColor, Black, window.WindowOptions.Radius)
 	window.titleView.
 		DrawHLine(0, window.titleView.H-titleBorder, window.titleView.W, titleBorder, 0x0) //.
 	//DrawVLine(window.titleView.W/2-titleBorder, 0, window.titleView.H, titleBorder, 0x0)
 	window.titleView.WriteCenteredIn(0, 0, window.titleView.W, window.titleView.H, window.Title, titleColor, titleBarBgColor).
 		Update()
+
+	window.InnerY += titleBarHeight
+	window.InnerH -= titleBarHeight
+
+	if window.WindowOptions.StatusBar != nil {
+		window.WindowOptions.StatusBar.ForceRefresh() // ensure full redisplay of status bar
+	}
 }
 
 // SetContent sets the internal view and returns the window for chaining purpose
 func (window *Window) SetContent(content Content, mx, my int) *Window {
 	Debug("Set Window Content")
 	window.content = content
-	window.Title = content.GetTitle()
-	window.RefreshTitleBar()
+	title := content.GetTitle()
+	if title != window.Title {
+		window.Title = title
+		window.RefreshTitleBar()
+	}
 	contentViews := content.Init(window.View)
-	window.View.Views = append(window.View.Views, contentViews...)
+	window.View.Views = contentViews
 	return window
 }
 

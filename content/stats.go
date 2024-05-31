@@ -96,7 +96,7 @@ func (stats *Stats) Print() {
 		view.TextArea.SetFont(labelFont)
 		view.WriteAt(0, y, field.name, display.Black, display.Gray14)
 		view.TextArea.SetFont(font)
-		view.WriteAt(labelWidth+view.TextArea.MarginX, y, fmt.Sprintf(field.format, field.value), display.Black, display.Transparent)
+		view.WriteAt(labelWidth+view.TextArea.MarginX, y, fmt.Sprintf(field.format, field.value), display.Black, display.White)
 		y += int(view.TextArea.Font.YAdvance)
 	}
 	view.Update()

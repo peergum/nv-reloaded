@@ -19,9 +19,12 @@
 package main
 
 import (
+	"fmt"
 	"nv/content"
 	"nv/display"
 	"nv/input"
+	"os/exec"
+	"time"
 )
 
 var (
@@ -49,6 +52,7 @@ var (
 	F6 = content.FunctionKey{
 		input.None:  {"WiFi Setup", fnWifiConfig},
 		input.Shift: {"WiFi on/off", fnWifiToggle},
+		input.Ctrl:  {"BLE on/off", fnBtToggle},
 	}
 	F7 = content.FunctionKey{
 		input.None:               {"Start Block", fnDoNothing},
@@ -207,7 +211,7 @@ func fnWifiConfig() {
 			x := (mainWindow.InnerW - wifiWidth) / 2
 			y := (mainWindow.InnerH - wifiHeight) / 2
 			wifiWindow = mainWindow.NewWindow(x, y, wifiWidth, wifiHeight, display.WindowOptions{
-				Title:        "Wifi Config",
+				Title:        "WiFi Setup",
 				TitleBar:     true,
 				Border:       2,
 				BorderColor:  display.Black,
@@ -233,5 +237,37 @@ func fnWifiConfig() {
 func fnWifiToggle() {
 	wifiActive = !wifiActive
 	// TODO: enable/disable wifi
+	mode := "up"
+	status := "ON" // more meaningful than up/down
+	if !wifiActive {
+		mode = "down"
+		status = "OFF"
+	}
+	cmd := exec.Command("/usr/sbin/ifconfig", "wlan0", mode)
+	if err := cmd.Run(); err != nil {
+		Debug("Err: %v", err)
+		wifiActive = !wifiActive
+	} else {
+		mainWindow.AlertBox(fmt.Sprintf("WiFi %s", status), 500*time.Millisecond)
+	}
 	statusBar.SetWifiState(wifiActive)
+}
+
+func fnBtToggle() {
+	btActive = !btActive
+	// TODO: enable/disable bluetooth
+	mode := "on"
+	status := "ON"
+	if !btActive {
+		mode = "off"
+		status = "OFF"
+	}
+	cmd := exec.Command("/usr/bin/bluetoothctl", "power", mode)
+	if err := cmd.Run(); err != nil {
+		Debug("Err: %v", err)
+		btActive = !btActive
+	} else {
+		mainWindow.AlertBox(fmt.Sprintf("Bluetooth %s", status), 500*time.Millisecond)
+	}
+	statusBar.SetBtState(btActive)
 }

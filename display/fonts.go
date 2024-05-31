@@ -334,6 +334,17 @@ func (view *View) WriteVCenteredAt(x int, text string, color it8951.Color, bgCol
 	return view.WriteAt(x, (view.H-hb)/2, text, color, bgColor)
 }
 
+func (view *View) WriteHCenteredAt(y int, text string, color it8951.Color, bgColor it8951.Color) *View {
+	x0, y0 := 0, y
+	xb, yb, wb, hb := view.GetTextBounds(text, &x0, &y0)
+	view.Xb = xb
+	view.Yb = yb
+	view.Wb = wb
+	view.Hb = hb
+	Debug("text bounds [%s],y=%d -> (%d,%d,%d,%d)", text, y, xb, yb, wb, hb)
+	return view.WriteAt((view.W-wb)/2, y, text, color, bgColor)
+}
+
 func (area *TextArea) SetFont(font *fonts.GfxFont) *TextArea {
 	if font != nil { // Font struct pointer passed in?
 		if area.Font == nil { // And no current font struct?

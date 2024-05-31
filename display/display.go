@@ -20,26 +20,35 @@ package display
 
 import (
 	it8951 "github.com/peergum/IT8951-go"
+	rand2 "math/rand"
 )
 
 const (
-	LogoFilename = "images/nv-reloaded.bmp"
-	iconWifi0    = "images/icons/wifi_0.bmp"
-	iconWifi1    = "images/icons/wifi_1.bmp"
-	iconWifi2    = "images/icons/wifi_2.bmp"
-	iconWifi3    = "images/icons/wifi_3.bmp"
-	iconWifi4    = "images/icons/wifi_4.bmp"
-	iconWifiOff  = "images/icons/wifi_off.bmp"
-	iconBattery0 = "images/icons/battery_0.bmp"
-	iconBattery1 = "images/icons/battery_1.bmp"
-	iconBattery2 = "images/icons/battery_2.bmp"
-	iconBattery3 = "images/icons/battery_3.bmp"
-	iconBattery4 = "images/icons/battery_4.bmp"
-	iconCharging = "images/icons/battery_chg.bmp"
+	LogoFilename   = "images/nv-reloaded-logo.bmp"
+	iconWifi0      = "images/icons/wifi_0.bmp"
+	iconWifi1      = "images/icons/wifi_1.bmp"
+	iconWifi2      = "images/icons/wifi_2.bmp"
+	iconWifi3      = "images/icons/wifi_3.bmp"
+	iconWifi4      = "images/icons/wifi_4.bmp"
+	iconWifiOff    = "images/icons/wifi_off.bmp"
+	iconBattery0   = "images/icons/battery_0.bmp"
+	iconBattery1   = "images/icons/battery_1.bmp"
+	iconBattery2   = "images/icons/battery_2.bmp"
+	iconBattery3   = "images/icons/battery_3.bmp"
+	iconBattery4   = "images/icons/battery_4.bmp"
+	iconCharging   = "images/icons/battery_chg.bmp"
+	iconBtOn       = "images/icons/bt_on.bmp"
+	iconBtOff      = "images/icons/bt_off.bmp"
+	iconKeyboard   = "images/icons/keyboard.bmp"
+	iconNoKeyboard = "images/icons/no_keyboard.bmp"
 )
 
 var (
 	DeviceInfo it8951.DevInfo
+	gallery    = []string{
+		"images/machu-picchu.bmp",
+		"images/teotihuacan.bmp",
+	}
 )
 
 func InitDisplay() {
@@ -86,5 +95,19 @@ func ShowLogo() {
 	logoView, err := Screen.LoadBitmapCentered(LogoFilename, bpp)
 	if err == nil {
 		logoView.Update()
+	}
+}
+
+func ShowGallery() {
+	bpp := 8
+	//for _, pic := range gallery {
+	//	galleryView, err := Screen.LoadBitmapCentered(pic, bpp)
+	//	if err == nil {
+	//		galleryView.Update()
+	//	}
+	//}
+	galleryView, err := Screen.LoadBitmapCentered(gallery[rand2.Int()%len(gallery)], bpp)
+	if err == nil {
+		galleryView.Update()
 	}
 }
