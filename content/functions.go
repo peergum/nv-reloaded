@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"nv/display"
 	"nv/display/fonts-go"
+	"nv/input"
 )
 
 type FnPanel struct {
@@ -48,7 +49,7 @@ var (
 	metaKeys     uint16
 )
 
-func (fnPanel *FnPanel) Init(view *display.View) (views []*display.View) {
+func (fnPanel *FnPanel) Init(view *display.View, refreshChannel chan bool) (views []*display.View) {
 	fnPanel.view = view.NewView(0, 0, view.InnerW, view.InnerH, 1)
 	fnPanel.view.Fill(0, display.White, display.Black).
 		SetTextArea(&fonts.CourierStd20pt8b, 0, 0).
@@ -56,6 +57,7 @@ func (fnPanel *FnPanel) Init(view *display.View) (views []*display.View) {
 	return append(views, fnPanel.view)
 }
 
+func (fnPanel *FnPanel) Close() {}
 func (fnPanel *FnPanel) Type() string {
 	return "functions"
 }
@@ -64,8 +66,7 @@ func (fnPanel *FnPanel) SetMeta(keys uint16) {
 	fnPanel.metaKeys = keys
 }
 
-func (fnPanel *FnPanel) Load() {
-}
+func (fnPanel *FnPanel) Load() {}
 
 func (fnPanel *FnPanel) Refresh() {
 }
@@ -84,10 +85,14 @@ func (fnPanel *FnPanel) Print() {
 	if len(fnPanel.FunctionKeys) == 0 {
 		return
 	}
+	nRows := numRows
+	if view.InnerW < display.VirtualH {
+		nRows *= 2
+	}
 	// split keys on 2 rows
-	numCols := numFnKeys / numRows
+	numCols := numFnKeys / nRows
 	fnWidth := view.InnerW / numCols
-	fnHeight := view.InnerH / numRows
+	fnHeight := view.InnerH / nRows
 	for i := 0; i < numFnKeys; i++ {
 		view.FillRectangle((i%numCols)*fnWidth, (i/numCols)*fnHeight, fnWidth, fnHeight, 3 /*panelBgColor*/, display.Black, display.White)
 		view.FillRectangle((i%numCols)*fnWidth+4, (i/numCols)*fnHeight+4, fnHeight, fnHeight-8, 1, display.White, display.Black)
@@ -107,3 +112,5 @@ func (fnPanel *FnPanel) Print() {
 	}
 	view.Update()
 }
+
+func (fnPanel *FnPanel) KeyEvent(event *input.KeyEvent) {}

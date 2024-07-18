@@ -98,9 +98,13 @@ func fnDoNothing() {}
 
 func fnToggleFnWindow() {
 	fnWindowToggle = !fnWindowToggle
+	fnHeight := functionHeight
+	if display.VirtualW < display.VirtualH {
+		fnHeight *= 2
+	}
 	if fnWindowToggle {
 		if fnWindow == nil {
-			fnWindow = mainWindow.NewWindow(0, mainWindow.InnerH-functionHeight, mainWindow.W, functionHeight, display.WindowOptions{
+			fnWindow = mainWindow.NewWindow(0, mainWindow.InnerH-fnHeight, mainWindow.InnerW, fnHeight, display.WindowOptions{
 				Title:       "Functions",
 				TitleBar:    false,
 				Border:      1,

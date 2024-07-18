@@ -49,6 +49,7 @@ type View struct {
 	content                        Content
 	Xb, Yb, Wb, Hb                 int
 	Views                          []*View
+	Rotation                       it8951.Rotate
 	//parent                         *View
 }
 
@@ -81,27 +82,36 @@ func (view *View) setBuffer(bpp int) {
 	if bpp > 1 {
 		ppw = 16 / bpp
 	}
+
+	viewX, viewY, viewW, viewH := view.X, view.Y, view.W, view.H
+	//if Rotation == it8951.Rotate90 || Rotation == it8951.Rotate270 {
+	//	viewX, viewY, viewW, viewH = view.Y, view.X, view.H, view.W
+	//}
 	// calculate drawing area (word rounded)
-	xmin := (view.X / ppw) * ppw              // low word limit
-	xmax := ((view.X+view.W-1)/ppw+1)*ppw - 1 // high word limit
+	xmin := (viewX / ppw) * ppw             // low word limit
+	xmax := ((viewX+viewW-1)/ppw+1)*ppw - 1 // high word limit
+	ymin := (viewY / ppw) * ppw             // low word limit
+	ymax := ((viewY+viewH-1)/ppw+1)*ppw - 1 // high word limit
+
 	ww := (xmax - xmin + 1) / ppw
-	wh := view.H
+	wh := viewH //(ymax - ymin + 1) / ppw
+	Debug("ww=%d,wh=%d", ww, wh)
 	view.buffer = &Buffer{
 		X:         xmin,
-		Y:         view.Y,
+		Y:         viewY,
 		ww:        ww,
-		wh:        wh,
-		inX:       view.X,
-		inY:       view.Y,
-		inW:       view.W,
-		inH:       view.H,
+		wh:        viewH,
+		inX:       viewX,
+		inY:       viewY,
+		inW:       viewW,
+		inH:       viewH,
 		bpp:       bpp,
 		data:      make(it8951.DataBuffer, ww*wh),
 		writeLock: make(chan bool, 1),
 		index:     bufferIndex,
 	}
 	bufferIndex++
-	Debug("Set writing buffer words=(%d x %d) (xmin=%d/xmax=%d,y=%d) bpp=%d", ww, wh, xmin, xmax, view.Y, bpp)
+	Debug("Set writing buffer words=(%d x %d) (xmin=%d/xmax=%d,ymin=%d/ymax=%d) bpp=%d", ww, wh, xmin, xmax, ymin, ymax, bpp)
 }
 
 func (view *View) NewView(x, y, w, h int, bpp int) *View {
@@ -109,17 +119,18 @@ func (view *View) NewView(x, y, w, h int, bpp int) *View {
 	newView := &View{
 		X: view.InnerX + x,
 		Y: view.InnerY + y,
-		W: min(view.InnerW, w),
-		H: min(view.InnerH, h),
+		W: min(view.InnerX+view.InnerW-x, w),
+		H: min(view.InnerH+view.InnerH-y, h),
 		// inner dimensions are the same by default
-		InnerX:  view.InnerX + x,
-		InnerY:  view.InnerY + y,
-		InnerW:  min(view.InnerW, w),
-		InnerH:  min(view.InnerH, h),
-		BgColor: view.BgColor,
+		InnerX:   view.InnerX + x,
+		InnerY:   view.InnerY + y,
+		InnerW:   min(view.InnerX+view.InnerW-x, w),
+		InnerH:   min(view.InnerH+view.InnerH-y, h),
+		BgColor:  view.BgColor,
+		Rotation: Rotation,
 	}
 	newView.setBuffer(bpp)
-	newView.CopyPixels(newView.X, newView.Y, view, view.X+x, view.Y+y, w, h)
+	newView.CopyPixels(0, 0, view, view.X+x, view.Y+y, w, h)
 
 	//newView.parent = view
 	Debug("NewView = (%d,%d,%d,%d)", newView.X, newView.Y, newView.W, newView.H)
@@ -647,14 +658,7 @@ func (buffer *Buffer) Unlock() {
 }
 
 // remember to lock buffer before a group of writePixels
-func (buffer *Buffer) writePixel(x, y int, fgColor uint16) {
-	//defer func() {
-	//	if err := recover(); err != nil {
-	//		Debug("error on pixel (%d,%d) in buffer(%d,%d,%d,%d)",
-	//			x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)
-	//	}
-	//}()
-
+func (buffer *Buffer) writePixel(virtualX, virtualY int, fgColor uint16) {
 	//Debug("writing pixel (%d,%d) -> (%d,%d)", x, y, x-buffer.X, y-buffer.Y)
 	bpp := buffer.bpp
 	if bpp == 1 {
@@ -662,6 +666,17 @@ func (buffer *Buffer) writePixel(x, y int, fgColor uint16) {
 	}
 	ppw := 16 / bpp
 
+	x, y := virtualX, virtualY
+	switch Rotation {
+	case it8951.Rotate90:
+		x, y = virtualX, virtualY
+	case it8951.Rotate180:
+		x, y = virtualX, virtualY
+	case it8951.Rotate270:
+		x, y = virtualX, virtualY
+	case it8951.Rotate0:
+	default:
+	}
 	if y-buffer.Y < 0 || y-buffer.Y >= buffer.wh || (x-buffer.X)/ppw < 0 || (x-buffer.X)/ppw >= buffer.ww {
 		//Debug("error writing pixel (%d,%d) in buffer(%d,%d,%d,%d)",
 		//	x, y, buffer.X, buffer.Y, buffer.ww, buffer.wh)

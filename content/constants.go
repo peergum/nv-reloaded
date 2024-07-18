@@ -21,13 +21,13 @@ package content
 import (
 	"nv/display"
 	"nv/display/fonts-go"
+	"time"
 )
 
 const (
 	cursorWidth                 = 2
 	cursorHeight                = 40
-	cursorOnDuration            = 500 // 1s
-	cursorOffDuration           = 500 // 1s
+	cursorBlinkInterval         = time.Duration(1000) * time.Millisecond // 1s
 	cursorRestartDelay          = 300
 	defaultParagraphIndent      = true
 	defaultParagraphSpacing     = true
@@ -38,6 +38,10 @@ const (
 )
 
 var (
+	//regularFont    = &fonts.UbuntuSans_Regular24pt8b
+	//boldFont       = &fonts.UbuntuSans_Bold24pt8b
+	//italicFont     = &fonts.UbuntuSans_Italic24pt8b
+	//boldItalicFont = &fonts.UbuntuSans_BoldItalic24pt8b
 	regularFont    = &fonts.UbuntuSans_Regular20pt8b
 	boldFont       = &fonts.UbuntuSans_Bold20pt8b
 	italicFont     = &fonts.UbuntuSans_Italic20pt8b

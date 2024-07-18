@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -132,6 +133,8 @@ func (keyboard *Keyboard) ReadKeyboard() error {
 	}(file)
 	reader := bufio.NewReader(file)
 	buffer := make([]byte, 24)
+	keyboardReadTicker := time.NewTicker(time.Duration(5) * time.Millisecond)
+	defer keyboardReadTicker.Stop()
 	done := false
 	for !done {
 		select {
@@ -142,62 +145,60 @@ func (keyboard *Keyboard) ReadKeyboard() error {
 			if event {
 				done = true
 			}
-		default:
-			//Debug("Waiting for keys...")
-		ReadEvent:
-			for {
-				keyEvent := KeyEvent{}
-				for i := 0; i < 24; i++ {
-					buffer[i], err = reader.ReadByte()
-					if err != nil {
-						break ReadEvent
-					}
+		case <-keyboardReadTicker.C: // check keyboard
+			for i := 0; i < 24; i++ {
+				buffer[i], err = reader.ReadByte()
+				if err != nil {
+					break
 				}
-				keyEvent.Sec = binary.BigEndian.Uint64(buffer[0:8])
-				keyEvent.USec = binary.BigEndian.Uint64(buffer[8:16])
-				keyEvent.Type = int(binary.LittleEndian.Uint16(buffer[16:18]))
-				keyEvent.Keycode = int(binary.LittleEndian.Uint16(buffer[18:20]))
-				keyEvent.Value, _ = utf8.DecodeRune(buffer[20:24])
-				keyEvent.TypeName = "?"
-				keyEvent.KeyName = "?"
-				if keyboard.Events[keyEvent.Type] != nil {
-					keyEvent.TypeName = keyboard.Events[keyEvent.Type].Name
-					if keyboard.Events[keyEvent.Type].Codes[keyEvent.Keycode] != nil {
-						keyEvent.KeyName = keyboard.Events[keyEvent.Type].Codes[keyEvent.Keycode].Name
-					}
-				}
-				//Debug("KeyEvent: %v", keyboard.Event(keyEvent))
-				//_ = keyboard.Event(keyEvent)
-				//Debug("%v", keyboard)
-
-				specialKey := None
-				switch keyEvent.KeyName {
-				case "KEY_SHIFT", "KEY_LEFTSHIFT", "KEY_RIGHTSHIFT":
-					specialKey = Shift
-				case "KEY_CTRL", "KEY_LEFTCTRL", "KEY_RIGHTCTRL":
-					specialKey = Ctrl
-				case "KEY_ALT", "KEY_LEFTALT", "KEY_RIGHTALT":
-					specialKey = Alt
-				case "KEY_META", "KEY_LEFTMETA", "KEY_RIGHTMETA":
-					specialKey = Meta
-				case "LED_CAPSL": // caps lock on or off
-					specialKey = CapsLock
-				}
-				if specialKey != None {
-					keyEvent.SpecialKeys = true
-					if keyEvent.Value == 0 {
-						metakeys &= ^specialKey
-					} else {
-						metakeys |= specialKey
-					}
-				}
-				keyEvent.MetaKeys = metakeys
-				if keymapEnUS[keyEvent.KeyName] != nil {
-					keyEvent.Char = keymapEnUS[keyEvent.KeyName][metakeys]
-				}
-				keyChannel <- &keyEvent
+			}
+			if err != nil {
 				break
 			}
+			keyEvent := KeyEvent{}
+			keyEvent.Sec = binary.BigEndian.Uint64(buffer[0:8])
+			keyEvent.USec = binary.BigEndian.Uint64(buffer[8:16])
+			keyEvent.Type = int(binary.LittleEndian.Uint16(buffer[16:18]))
+			keyEvent.Keycode = int(binary.LittleEndian.Uint16(buffer[18:20]))
+			keyEvent.Value, _ = utf8.DecodeRune(buffer[20:24])
+			keyEvent.TypeName = "?"
+			keyEvent.KeyName = "?"
+			if keyboard.Events[keyEvent.Type] != nil {
+				keyEvent.TypeName = keyboard.Events[keyEvent.Type].Name
+				if keyboard.Events[keyEvent.Type].Codes[keyEvent.Keycode] != nil {
+					keyEvent.KeyName = keyboard.Events[keyEvent.Type].Codes[keyEvent.Keycode].Name
+				}
+			}
+			//Debug("KeyEvent: %v", keyboard.Event(keyEvent))
+			//_ = keyboard.Event(keyEvent)
+			//Debug("%v", keyboard)
+
+			specialKey := None
+			switch keyEvent.KeyName {
+			case "KEY_SHIFT", "KEY_LEFTSHIFT", "KEY_RIGHTSHIFT":
+				specialKey = Shift
+			case "KEY_CTRL", "KEY_LEFTCTRL", "KEY_RIGHTCTRL":
+				specialKey = Ctrl
+			case "KEY_ALT", "KEY_LEFTALT", "KEY_RIGHTALT":
+				specialKey = Alt
+			case "KEY_META", "KEY_LEFTMETA", "KEY_RIGHTMETA":
+				specialKey = Meta
+			case "LED_CAPSL": // caps lock on or off
+				specialKey = CapsLock
+			}
+			if specialKey != None {
+				keyEvent.SpecialKeys = true
+				if keyEvent.Value == 0 {
+					metakeys &= ^specialKey
+				} else {
+					metakeys |= specialKey
+				}
+			}
+			keyEvent.MetaKeys = metakeys
+			if keymapEnUS[keyEvent.KeyName] != nil {
+				keyEvent.Char = keymapEnUS[keyEvent.KeyName][metakeys]
+			}
+			keyChannel <- &keyEvent
 		}
 	}
 	Debug("We're done")
@@ -222,8 +223,8 @@ func CheckKeyboard(filename string) {
 			}
 			isKeys := false
 			for scanner.Scan() {
-				Debug(scanner.Text())
 				text := scanner.Text()
+				//Debug(text)
 				if strings.Contains(text, "ID_VENDOR=") {
 					kbd.Vendor = "" + strings.Split(text, "=")[1]
 					Debug("Found vendor: %s", kbd.Vendor)
@@ -371,6 +372,7 @@ SearchLoop:
 		case <-mainEventChannel:
 			break SearchLoop
 		}
+		//time.Sleep(time.Duration(500) * time.Millisecond)
 	}
 	Debug("Done with input")
 }

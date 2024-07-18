@@ -44,39 +44,41 @@ const (
 )
 
 var (
-	DeviceInfo it8951.DevInfo
-	gallery    = []string{
+	DeviceInfo         *it8951.DevInfo
+	Rotation           it8951.Rotate
+	VirtualW, VirtualH int
+	gallery            = []string{
 		"images/machu-picchu.bmp",
 		"images/teotihuacan.bmp",
 	}
 )
 
-func InitDisplay() {
-	DeviceInfo = it8951.Init(2130)
-	Debug(DeviceInfo.String())
+func InitDisplay(vcom uint16, rotation it8951.Rotate) {
+	DeviceInfo = it8951.Init(vcom)
+	Rotation = rotation // TODO: implement screen rotations
+	Debug("%v rotation=%d", DeviceInfo.String(), Rotation)
+	VirtualW, VirtualH = int(DeviceInfo.PanelW), int(DeviceInfo.PanelH)
+	if rotation == it8951.Rotate90 || rotation == it8951.Rotate270 {
+		//	// vertical orientation -> swap W/H
+		VirtualW, VirtualH = VirtualH, VirtualW
+	}
 
-	DeviceInfo.ClearRefresh(uint32(DeviceInfo.MemAddrL)+uint32(DeviceInfo.MemAddrH)<<16, it8951.InitMode)
+	DeviceInfo.ClearRefresh(uint32(DeviceInfo.MemAddrL)+uint32(DeviceInfo.MemAddrH)<<16, it8951.InitMode, rotation)
 	it8951.WaitForDisplayReady()
 }
 
 func InitScreen() {
 	Screen = ScreenView{
 		View: &View{
-			X:      0,
-			Y:      0,
-			W:      int(DeviceInfo.PanelW),
-			H:      int(DeviceInfo.PanelH),
-			InnerX: 0,
-			InnerY: 0,
-			InnerW: int(DeviceInfo.PanelW),
-			InnerH: int(DeviceInfo.PanelH),
-			//buffer: Buffer{
-			//	X:    0,
-			//	Y:    0,
-			//	ww:   int(DeviceInfo.PanelW / 2),
-			//	wh:   int(DeviceInfo.PanelH),
-			//	data: make(it8951.DataBuffer, int(DeviceInfo.PanelW)*int(DeviceInfo.PanelH)/2),
-			//},
+			X:        0,
+			Y:        0,
+			W:        int(VirtualW),
+			H:        int(VirtualH),
+			InnerX:   0,
+			InnerY:   0,
+			InnerW:   int(VirtualW),
+			InnerH:   int(VirtualH),
+			Rotation: Rotation,
 		},
 		Windows: make([]*Window, 0, 10),
 	}
@@ -108,6 +110,8 @@ func ShowGallery() {
 	//}
 	galleryView, err := Screen.LoadBitmapCentered(gallery[rand2.Int()%len(gallery)], bpp)
 	if err == nil {
+		galleryView.RoundedRectangle(25, 25, galleryView.W-50, galleryView.H-50, 5, 0xffff, 30)
+		galleryView.RoundedRectangle(30, 30, galleryView.W-60, galleryView.H-60, 2, Black, 30)
 		galleryView.Update()
 	}
 }

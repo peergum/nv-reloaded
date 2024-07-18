@@ -27,8 +27,8 @@ const (
 	repeat        = 20 // total number of stripes for width
 	slope         = -1 // negative = slanted right
 	ratio         = 2  // ratio blank/stripe
-	border        = 1  // frame border
-	spinnerBorder = 2  // spinner rectangle border
+	border        = 4  // frame border
+	spinnerBorder = 4  // spinner rectangle border
 	width         = 300
 	height        = 20
 	margin        = 40

@@ -25,6 +25,7 @@ import (
 	it8951 "github.com/peergum/IT8951-go"
 	"nv/display"
 	"nv/display/fonts-go"
+	"nv/input"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -126,8 +127,8 @@ func (list *SSIDList) GetValues(doneChannel chan<- bool) {
 	scanner.Split(bufio.ScanLines)
 	ssid := SSID{}
 	for scanner.Scan() {
-		//Debug(scanner.Text())
 		text := scanner.Text()
+		//Debug(text)
 		if strings.Contains(text, "ESSID:") {
 			ssid.Name = strings.Split(text, "\"")[1]
 		}
@@ -179,7 +180,7 @@ func (list *SSIDList) GetValues(doneChannel chan<- bool) {
 	//Debug("%s", list)
 }
 
-func (wifiPanel *WifiPanel) Init(view *display.View) (views []*display.View) {
+func (wifiPanel *WifiPanel) Init(view *display.View, refreshChannel chan bool) (views []*display.View) {
 	wifiPanel.view = view.NewView(0, 0, view.InnerW, view.InnerH, 4)
 	wifiPanel.view.Fill(1, display.White, display.Black).
 		SetTextArea(&fonts.IsoMetrixNF20pt8b, 20, 20).
@@ -212,6 +213,7 @@ func (wifiPanel *WifiPanel) Init(view *display.View) (views []*display.View) {
 	return append(views, wifiPanel.view)
 }
 
+func (wifiPanel *WifiPanel) Close() {}
 func (wifiPanel *WifiPanel) GetTitle() string {
 	return "WiFi Setup"
 }
@@ -296,3 +298,5 @@ func (wifiPanel *WifiPanel) Print() {
 	}
 	view.Update()
 }
+
+func (wifipanel *WifiPanel) KeyEvent(event *input.KeyEvent) {}

@@ -21,13 +21,14 @@ package content
 import (
 	"nv/display"
 	"nv/display/fonts-go"
+	"nv/input"
 )
 
 type Welcome struct {
 	*Document
 }
 
-func (welcome *Welcome) Init(view *display.View) (views []*display.View) {
+func (welcome *Welcome) Init(view *display.View, refreshChannel chan bool) (views []*display.View) {
 	welcome.Document = &Document{
 		Filename:             "welcome.txt",
 		Filetype:             "asset",
@@ -38,11 +39,11 @@ func (welcome *Welcome) Init(view *display.View) (views []*display.View) {
 	}
 	welcome.mx = 100
 	welcome.my = 100
-	welcome.Document.Init(view)
+	welcome.Document.Init(view,refreshChannel)
 	welcome.Document.view.SetTextArea(&fonts.Montserrat_Medium20pt8b, 100, 100).Update()
 	return append(views, welcome.Document.view)
 }
-
+func (welcome *Welcome) Close() {}
 func (welcome *Welcome) Type() string {
 	return "welcome"
 }
@@ -80,3 +81,5 @@ func (welcome *Welcome) Print() {
 	//	y += hb + paragraphSpacing
 	//}
 }
+
+func (welcome *Welcome) KeyEvent(event *input.KeyEvent) {}

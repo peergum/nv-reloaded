@@ -21,13 +21,14 @@ package content
 import (
 	"nv/display"
 	"nv/display/fonts-go"
+	"nv/input"
 )
 
 type Empty struct {
 	*display.View
 }
 
-func (empty *Empty) Init(view *display.View) (views []*display.View) {
+func (empty *Empty) Init(view *display.View, refreshChannel chan bool) (views []*display.View) {
 	empty.View = view.NewView(0, 0, view.InnerW, view.InnerH, 4).
 		Fill(0, display.White, display.Black).
 		SetTextArea(&fonts.CourierStd20pt8b, 10, 10).
@@ -36,6 +37,7 @@ func (empty *Empty) Init(view *display.View) (views []*display.View) {
 	return append(views, empty.View)
 }
 
+func (empty *Empty) Close() {}
 func (empty *Empty) Type() string {
 	return "empty"
 }
@@ -53,6 +55,6 @@ func (empty *Empty) GetTitle() string {
 	return "Let's Do This!"
 }
 
-func (empty *Empty) Print() {
+func (empty *Empty) Print() {}
 
-}
+func (empty *Empty) KeyEvent(event *input.KeyEvent) {}

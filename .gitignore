@@ -34,3 +34,6 @@ sync
 nv
 .DS_Store
 go.work*
+setup/**
+
+tinydrm_it8951

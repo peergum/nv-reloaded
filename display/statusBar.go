@@ -112,7 +112,7 @@ func (view *View) NewStatusBar(piSugar *pi_sugar.PiSugar, bgColor it8951.Color) 
 		wifi:              wifiIconView,
 		bt:                btIconView,
 		keyboard:          kbdIconView,
-		W:                 dateBarWidth + batteryViewWidth + batteryValueWidth + wifiViewWidth + btViewWidth,
+		W:                 pos,
 		heartBeatTicker:   time.NewTicker(time.Duration(1000) * time.Millisecond),
 		iconRefreshTicker: time.NewTicker(time.Duration(5000) * time.Millisecond),
 		piSugar:           piSugar,
@@ -165,8 +165,9 @@ func (statusBar *StatusBar) Run() {
 		select {
 		case <-statusBar.heartBeatTicker.C:
 			statusBar.Refresh()
-		default:
+			//default:
 		}
+		//time.Sleep(time.Duration(500) * time.Millisecond)
 	}
 	statusBar.heartBeatTicker.Stop()
 	statusBar.iconRefreshTicker.Stop()
@@ -198,7 +199,7 @@ func (statusBar *StatusBar) Refresh() {
 			scanner.Split(bufio.ScanLines)
 			for scanner.Scan() {
 				text := scanner.Text()
-				Debug("%s", text)
+				//Debug("%s", text)
 				if strings.Contains(text, "Quality=") {
 					q := strings.Split(strings.Split(text, "=")[1], "/")[0]
 					quality, err := strconv.Atoi(q)
@@ -225,7 +226,7 @@ func (statusBar *StatusBar) Refresh() {
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
 			text := scanner.Text()
-			Debug("%s", text)
+			//Debug("%s", text)
 			if strings.Contains(text, "Powered:") &&
 				strings.Contains(text, "yes") {
 				btActive = true

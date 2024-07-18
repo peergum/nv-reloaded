@@ -51,7 +51,7 @@ func UpdateScreen(update *ScreenUpdate) {
 	screenUpdateChannel <- update
 }
 
-func ScreenUpdater() {
+func ScreenUpdater(displayDone chan<- bool) {
 	done := false
 	for !done {
 		select {
@@ -65,21 +65,40 @@ func ScreenUpdater() {
 			Debug("ScreenUpdater received update")
 			view := update.View
 			x, y, w, h := update.X, update.Y, update.W, update.H
+			viewX, viewY, viewW, viewH := view.X, view.Y, view.W, view.H
+			shiftX := int(DeviceInfo.PanelW) - VirtualW
+			shiftY := int(DeviceInfo.PanelH) - VirtualH
+			switch Rotation {
+			case it8951.Rotate90:
+				//shiftX := int(DeviceInfo.PanelW) - VirtualH
+				//shiftY := int(DeviceInfo.PanelH) - VirtualW
+				x, y, w, h = update.Y, update.X, update.H, update.W
+				viewX, viewY, viewW, viewH = view.X, view.Y, view.W, view.H
+			case it8951.Rotate180:
+				x, y, w, h = shiftX+update.X, shiftY+update.Y, update.W, update.H
+				viewX, viewY, viewW, viewH = view.X, view.Y, view.W, view.H
+			case it8951.Rotate270:
+				shiftX = int(DeviceInfo.PanelH) - VirtualW
+				shiftY = int(DeviceInfo.PanelW) - VirtualH
+				x, y, w, h = shiftY+update.Y, update.X, update.H, update.W
+				viewX, viewY, viewW, viewH = view.X, view.Y, view.W, view.H
+			default:
+			}
 			switch update.UpdateType {
 			case Refresh:
 				imageInfo := it8951.LoadImgInfo{
 					EndianType:       it8951.LoadImgLittleEndian,
 					PixelFormat:      pixelFormat(view.buffer.bpp),
-					Rotate:           it8951.Rotate0,
+					Rotate:           update.View.Rotation,
 					SourceBufferAddr: view.buffer.data,
 					TargetMemAddr:    DeviceInfo.TargetAddress(),
 				}
 
 				areaInfo := it8951.AreaImgInfo{
-					X: uint16(view.X),
-					Y: uint16(view.Y),
-					W: uint16(view.W),
-					H: uint16(view.H),
+					X: uint16(viewX),
+					Y: uint16(viewY),
+					W: uint16(viewW),
+					H: uint16(viewH),
 				}
 				imageInfo.HostAreaPackedPixelWrite(areaInfo, view.buffer.bpp, true)
 				mode := it8951.GC16Mode
@@ -95,4 +114,5 @@ func ScreenUpdater() {
 			update.View.buffer.Unlock() // unlock when we're done
 		}
 	}
+	displayDone <- true
 }

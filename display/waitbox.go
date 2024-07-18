@@ -33,11 +33,12 @@ func (window *Window) WaitBox(text string, duration time.Duration) {
 	if waitBox != nil {
 		window.CancelWait()
 	}
-	waitBox = window.NewCenteredWindow(WindowOptions{
+	waitBox = window.NewCenteredWindow(400, 300, WindowOptions{
 		TitleBar:    false,
 		Border:      5,
 		BorderColor: Black,
-		BgColor:     White,
+		BgColor:     Gray13,
+		Bpp:         4,
 	})
 	waitBox.View.
 		Fill(2, White, Black).

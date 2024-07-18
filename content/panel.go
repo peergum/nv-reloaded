@@ -20,6 +20,7 @@ package content
 
 import (
 	"nv/display"
+	"nv/input"
 )
 
 type Panel struct {
@@ -51,7 +52,7 @@ const (
 	SelectField
 )
 
-func (panel *Panel) Init(view *display.View) (views []*display.View) {
+func (panel *Panel) Init(view *display.View, refreshChannel chan bool) (views []*display.View) {
 	panel.view = view
 	view.
 		SetTextArea(panelFont, 10, 10).
@@ -59,6 +60,7 @@ func (panel *Panel) Init(view *display.View) (views []*display.View) {
 	return append(views, view)
 }
 
+func (panel *Panel) Close() {}
 func (panel *Panel) GetTitle() string {
 	return "Panel"
 }
@@ -79,3 +81,5 @@ func (panel *Panel) Print() {
 func (panel *Panel) Type() string {
 	return "Panel"
 }
+
+func (panel *Panel) KeyEvent(event *input.KeyEvent) {}

@@ -23,7 +23,9 @@ import (
 	"fmt"
 	it8951 "github.com/peergum/IT8951-go"
 	"github.com/peergum/pi-sugar"
+	"io"
 	"log"
+	"net/http"
 	"nv/content"
 	"nv/display"
 	"nv/display/fonts-go"
@@ -49,24 +51,28 @@ const (
 	wifiWidth          = 800
 	wifiHeight         = 600
 	screenBgColor      = display.White
+	// TODO: screen orientation is not functional yet: keep value at 0º
+	defaultOrientationCCWDegrees = 0     // orientation in degrees counterclockwise (0,90,180,270)
+	defaultVcom                  = -2.13 // for 6" 1448x1072 HD Waveshare display
 )
 
 var (
-	shouldTerminate bool // program should exit
-	shouldRestart   bool // program should restart
-	shouldPowerOff  bool
-	shouldReboot    bool
-	freshStart      bool           = true
-	signalChannel   chan os.Signal = make(chan os.Signal, 1)
-	debug           bool
-	noWelcome       bool
-	epd             bool
-	Rotation        it8951.Rotate = it8951.Rotate0
-	photoBorder     int           = 10
-	statsWidth                    = defaultStatsWidth
-	statsHeight                   = defaultStatsHeight
-	statsMargin                   = defaultStatsMargin
-	functionHeight                = 100
+	shouldTerminate       bool // program should exit
+	shouldRestart         bool // program should restart
+	shouldPowerOff        bool
+	shouldReboot          bool
+	freshStart            bool           = true
+	signalChannel         chan os.Signal = make(chan os.Signal, 1)
+	terminateChannel      chan bool      = make(chan bool, 1)
+	debug                 bool
+	noWelcome             bool
+	vcom                  float64
+	orientationCCWDegrees int
+	photoBorder           int = 10
+	statsWidth                = defaultStatsWidth
+	statsHeight               = defaultStatsHeight
+	statsMargin               = defaultStatsMargin
+	functionHeight            = 100
 
 	fnWindowToggle    = false
 	statsWindowToggle = false
@@ -94,6 +100,8 @@ var (
 func init() {
 	flag.BoolVar(&debug, "d", false, "debug mode")
 	flag.BoolVar(&noWelcome, "nw", false, "Skip welcome screen")
+	flag.Float64Var(&vcom, "vcom", defaultVcom, "Display VCOM value (default: -2.13)")
+	flag.IntVar(&orientationCCWDegrees, "rotation", defaultOrientationCCWDegrees, "Orientation in degrees, counterclockwise (0,90,180,270)")
 }
 
 func nv() string {
@@ -115,14 +123,31 @@ func Debug(format string, args ...interface{}) {
 }
 
 func ensureBtStarted() {
-	cmd := exec.Command("/usr/bin/btmgmt", "power", "on")
+	cmd := exec.Command("/usr/bin/bluetoothctl", "power", "on")
 	if err := cmd.Run(); err != nil {
 		Debug("Err: %v", err)
 	}
 }
 
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := io.WriteString(w, "Yeah!\n")
+	if err != nil {
+		Debug("Err: %v", err)
+	}
+}
+
+func server() {
+	http.HandleFunc("/", rootHandler)
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func main() {
 	flag.Parse()
+
+	go server()
 
 	// external signal handler
 	signal.Notify(signalChannel, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGUSR1)
@@ -142,8 +167,14 @@ func main() {
 
 	piSugar.Refresh()
 
-	display.InitDisplay()
-	go display.ScreenUpdater() // start background updater
+	if vcom >= 0 || vcom < -5.0 {
+		Debug("Wrong vcom value: %f", vcom)
+		return // we're done
+	}
+	display.InitDisplay(uint16(-vcom*1000), it8951.Rotate(orientationCCWDegrees/90))
+
+	displayUpdatesDone := make(chan bool, 1)
+	go display.ScreenUpdater(displayUpdatesDone) // start background updater
 
 	//os.Exit(0)
 	for shouldRestart || freshStart {
@@ -162,6 +193,9 @@ func main() {
 		go input.Search(eventChannel)
 
 		display.InitScreen()
+
+		//time.Sleep(time.Duration(3000) * time.Millisecond)
+		//return
 		display.Screen.View.Fill(0, display.White, display.Black).Update()
 
 		ensureBtStarted()
@@ -191,9 +225,9 @@ func main() {
 
 		go statusBar.Run()
 		//heartBeatTicker := time.NewTicker(time.Duration(1000) * time.Millisecond)
-	mainLoop:
+
 		for !shouldTerminate && !shouldRestart {
-			display.CheckAlertBox() // close alertbox if marked that way
+			//display.CheckAlertBox() // close alertbox if marked that way
 
 			select {
 			//case <-heartBeatTicker.C:
@@ -230,20 +264,13 @@ func main() {
 					if err == nil && fnNum > 0 && fnNum < 13 {
 						functions.FunctionKeys[fnNum-1][metaKey].Command()
 					}
-				} else if mainWindow.GetContentType() == "document" && event.TypeName == "EV_KEY" && event.Value > 0 && currentDoc.Ready {
-					currentDoc.Editor(event)
+				} else if event.TypeName == "EV_KEY" {
+					mainWindow.KeyEvent(event)
 				}
-
-			default:
-				if shouldTerminate {
-					break mainLoop
-				}
-			}
-			if mainWindow.GetContentType() == "document" && currentDoc.Ready {
-				if currentDoc.RefreshNeeded {
-					currentDoc.Editor(nil)
-				}
-				currentDoc.ToggleCursor()
+			case <-terminateChannel:
+				shouldTerminate = true
+			case <-mainWindow.RefreshChannel:
+				mainWindow.KeyEvent(nil)
 			}
 		}
 		display.CancelAlertBox()
@@ -253,7 +280,7 @@ func main() {
 		Debug("We're done")
 		eventChannel <- true
 
-		win := mainWindow.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
+		win := display.Screen.NewWindow(0, 0, display.Screen.W, display.Screen.H, display.WindowOptions{
 			//Title:       "NV PowerOff",
 			TitleBar:     false,
 			Border:       0,
@@ -268,9 +295,10 @@ func main() {
 				Update()
 
 			time.Sleep(time.Duration(2000) * time.Millisecond)
-			win.Fill(0, display.White, display.Black).
-				Update()
-			display.ShowLogo()
+			//win.Fill(0, display.White, display.Black).
+			//	Update()
+			display.ShowGallery()
+			//display.ShowLogo()
 			if err := exec.Command("shutdown", "-P", "now").Run(); err != nil {
 				Debug("Shutdown Error: %s", err)
 			}
@@ -280,9 +308,10 @@ func main() {
 				Update()
 
 			time.Sleep(time.Duration(2000) * time.Millisecond)
-			win.Fill(0, display.White, display.Black).
-				Update()
-			display.ShowLogo()
+			//win.Fill(0, display.White, display.Black).
+			//	Update()
+			display.ShowGallery()
+			//display.ShowLogo()
 			if err := exec.Command("shutdown", "-r", "now").Run(); err != nil {
 				Debug("Error Rebooting: %s", err)
 			}
@@ -296,14 +325,15 @@ func main() {
 			win.SetTextArea(font, 0, 0).
 				WriteCenteredIn(0, 0, win.W, win.H, "Terminating", display.Black, display.White).
 				Update()
+			display.ShowGallery()
 
 			//time.Sleep(time.Duration(500) * time.Millisecond)
 			//win.Fill(0, display.White, display.Black).
 			//	Update()
 		}
-		display.ShowGallery()
 	}
 	display.UpdateScreen(nil)
+	<-displayUpdatesDone
 }
 
 func terminate() {
@@ -316,7 +346,7 @@ func signalHandler(c chan os.Signal) {
 		case s := <-c:
 			Debug("Got signal: %v", s)
 			if s == syscall.SIGKILL || s == syscall.SIGINT || s == syscall.SIGTERM || s == syscall.SIGHUP {
-				shouldTerminate = true
+				terminateChannel <- true
 			} else if s == syscall.SIGUSR1 {
 				shouldRestart = true
 			}

@@ -64,6 +64,8 @@ type Document struct {
 	paragraphIndent      bool
 	paragraphIndentValue string
 	paragraphSpacing     bool
+	refreshChannel       chan bool
+	closingChannel       chan bool
 }
 
 type Paragraph struct {
@@ -116,7 +118,9 @@ var (
 	direction            int
 )
 
-func (document *Document) Init(view *display.View) (views []*display.View) {
+func (document *Document) Init(view *display.View, refreshChannel chan bool) (views []*display.View) {
+	document.refreshChannel = refreshChannel
+	document.closingChannel = make(chan bool)
 	// set up default margins
 	Debug("Initializing document")
 	if document.mx == 0 || document.my == 0 {
@@ -147,7 +151,13 @@ func (document *Document) Init(view *display.View) (views []*display.View) {
 		views = append(views, document.scrollBarView)
 	}
 	document.view.SetCursor(document.view.InnerX+document.view.TextArea.MarginX, document.view.InnerY+document.view.TextArea.MarginY)
+	go document.ToggleCursor()
 	return views
+}
+
+func (document *Document) Close() {
+	Debug("Closing document")
+	document.closingChannel <- true // stops go routines
 }
 
 func (document *Document) Type() string {
@@ -675,6 +685,7 @@ func (document *Document) Editor(event *input.KeyEvent) {
 				}
 				movingKeyCount++
 				document.RefreshNeeded = true
+				document.refreshChannel <- true
 				document.checkRefresh()
 				keyTS = time.Now()
 				cursorTS = time.Now()
@@ -790,21 +801,31 @@ func (document *Document) checkRefresh() {
 }
 
 func (document *Document) ToggleCursor() {
-	elapsed := time.Now().Sub(cursorTS)
-	keyElapsed := time.Now().Sub(keyTS)
+	cursorTicker := time.NewTicker(cursorBlinkInterval)
+cursorLoop:
+	for {
+		select {
+		case <-cursorTicker.C:
+			if document.Ready {
+				keyElapsed := time.Now().Sub(keyTS)
 
-	// check if we need to print something...
-	if keyElapsed.Milliseconds() > 100 && charCount > 0 {
-		document.Editor(nil) // force printing
-	}
+				// check if we need to print something...
+				if keyElapsed.Milliseconds() > 100 && charCount > 0 {
+					document.refreshChannel <- true
+				}
 
-	// handle possible different durations for cursor on and off
-	if ((cursorOn && elapsed.Milliseconds() > cursorOnDuration) ||
-		(!cursorOn && elapsed.Milliseconds() > cursorOffDuration)) &&
-		keyElapsed.Milliseconds() > cursorRestartDelay {
-		//if keyElapsed.Milliseconds() > cursorRestartDelay {
-		document.forceCursor(true)
+				// handle possible different durations for cursor on and off
+				if keyElapsed.Milliseconds() > cursorRestartDelay {
+					//if keyElapsed.Milliseconds() > cursorRestartDelay {
+					cursorOn = !cursorOn
+					document.forceCursor(cursorOn)
+				}
+			}
+		case <-document.closingChannel:
+			break cursorLoop
+		}
 	}
+	cursorTicker.Stop()
 }
 
 func (document *Document) forceCursor(on bool) {
@@ -827,4 +848,9 @@ func (document *Document) forceCursor(on bool) {
 
 func (element Element) String() string {
 	return "[" + string(element.before) + string(element.word) + string(element.after) + "]"
+}
+
+func (document *Document) KeyEvent(event *input.KeyEvent) {
+	Debug("Event %v", event)
+	document.Editor(event)
 }

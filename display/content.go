@@ -19,12 +19,16 @@
 // Package content does ...
 package display
 
+import "nv/input"
+
 type Content interface {
-	Init(*View) []*View
+	Init(*View, chan bool) (views []*View)
 	GetTitle() string
 	Load()
 	Refresh()
 	Save()
 	Print()
 	Type() string
+	KeyEvent(*input.KeyEvent)
+	Close()
 }

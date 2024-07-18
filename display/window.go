@@ -21,6 +21,7 @@ package display
 import (
 	it8951 "github.com/peergum/IT8951-go"
 	"nv/display/fonts-go"
+	"nv/input"
 )
 
 type WindowOptions struct {
@@ -39,12 +40,13 @@ type WindowOptions struct {
 type Window struct {
 	*View
 	WindowOptions
-	titleView  *View
-	Views      []*View
-	updated    bool
-	visible    bool
-	parent     *View
-	titleWidth int
+	titleView      *View
+	Views          []*View
+	updated        bool
+	visible        bool
+	parent         *View
+	titleWidth     int
+	RefreshChannel chan bool
 }
 
 type ScreenView struct {
@@ -85,12 +87,13 @@ func Ppb(bpp int) int {
 	return 1
 }
 
-func (view *View) NewCenteredWindow(options WindowOptions) *Window {
-	return view.NewWindow((view.InnerW-800)/2, (view.InnerH-300)/2, 800, 300, options)
+func (view *View) NewCenteredWindow(W, H int, options WindowOptions) *Window {
+	return view.NewWindow((view.InnerW-W)/2, (view.InnerH-H)/2, W, H, options)
 }
 
 func (view *View) NewWindow(x, y, w, h int, options WindowOptions) *Window {
-	Debug("Create a New Window (%d,%d,%d,%d,\"%s\")", x, y, w, h, options.Title)
+	Debug("Create a New Window (%d,%d,%d,%d,\"%s\") inside (%d,%d,%d,%d)", x, y, w, h, options.Title,
+		view.X, view.Y, view.W, view.H)
 	CancelAlertBox()
 	var window Window
 	window.parent = view
@@ -98,14 +101,16 @@ func (view *View) NewWindow(x, y, w, h int, options WindowOptions) *Window {
 		options.Bpp = 4
 	}
 	window.WindowOptions = options
-	//if window.View == nil {
+
+	window.RefreshChannel = make(chan bool)
+
+	//create an internal view to use for content
 	window.View = view.NewView(x, y, w, h, options.Bpp)
-	if options.Bpp == 1 {
-		window.View.Fill(0, options.BgColor, Black) //.Update()
-	}
-	window.Views = make([]*View, 0)
-	window.Views = append(window.Views, window.View)
+	//if options.Bpp == 1 {
+	//	window.View.Fill(0, options.BgColor, Black) //.Update()
 	//}
+	window.Views = make([]*View, 0, 5)
+
 	// prepare for first appearance
 	window.updated = true
 	window.Show()
@@ -172,25 +177,25 @@ func (window *Window) Hide() {
 
 	//// create a temporary new view to restore parent view partially faster
 
+	//for _, parentView := range window.parent.Views {
+	//	if parentView == window.View || parentView == nil {
+	//		continue
+	//	}
+	//	//parentView.Refresh(window.X, window.Y, window.W, window.H)
+	//	view := Screen.NewView(window.X, window.Y, window.W, window.H, 4)
+	//	// copy content from parent
+	//	view.CopyPixels(view.X, view.Y, parentView, window.X, window.Y, window.W, window.H)
+	//	view.Update()
+	//}
+
 	for _, parentView := range window.parent.Views {
 		if parentView == window.View {
 			continue
 		}
-		//parentView.Refresh(window.X, window.Y, window.W, window.H)
-		view := Screen.NewView(window.X, window.Y, window.W, window.H, 4)
-		// copy content from parent
-		view.CopyPixels(view.X, view.Y, parentView, window.X, window.Y, window.W, window.H)
-		view.Refresh(view.X, view.Y, view.W, view.H)
+		//	// copy content from parent
+		//	view.CopyPixels(view.X, view.Y, parentView, window.X, window.Y, window.W, window.H)
+		parentView.Refresh(window.X, window.Y, window.W, window.H)
 	}
-
-	//for _, parentView := range window.parent.Views {
-	//	if parentView == window.View {
-	//		continue
-	//	}
-	//	//	// copy content from parent
-	//	//	view.CopyPixels(view.X, view.Y, parentView, window.X, window.Y, window.W, window.H)
-	//	parentView.Refresh(window.X, window.Y, window.W, window.H)
-	//}
 
 }
 
@@ -215,7 +220,7 @@ func (window *Window) RefreshTitleBar() {
 	if currentTitleWidth > 0 {
 		for _, parent := range window.parent.Views {
 			if parent != nil {
-				window.CopyPixels(0, 0, parent, window.X, window.Y, currentTitleWidth, titleBarHeight)
+				window.CopyPixels(window.X, window.Y, parent, window.X, window.Y, currentTitleWidth, titleBarHeight)
 			}
 		}
 
@@ -225,10 +230,23 @@ func (window *Window) RefreshTitleBar() {
 	// determine title width
 	x0, y0 := 0, 0
 	window.SetTextArea(titleBarFont, 0, 0)
-	_, _, window.titleWidth, _ = window.GetTextBounds(window.Title, &x0, &y0)
-
-	window.titleWidth += 60 // allow for some margin
-	window.titleView = window.NewView(-window.Border, 0, window.titleWidth, titleBarHeight, 4).
+	title := window.Title
+	ellipsis := "" // no ellipsis by default
+	statusBarLength := 0
+	if window.StatusBar != nil {
+		statusBarLength = window.StatusBar.W
+	}
+	for {
+		_, _, window.titleWidth, _ = window.GetTextBounds(title+ellipsis, &x0, &y0)
+		window.titleWidth += 60 // allow for some margin
+		if window.titleWidth <= window.W-statusBarLength-10 {
+			title += ellipsis
+			break
+		}
+		title = title[:len(title)-1]
+		ellipsis = "..."
+	}
+	window.titleView = window.NewView(-1, 0, window.titleWidth, titleBarHeight, 4).
 		Fill(0, titleBarBgColor, Black).
 		SetTextArea(titleBarFont, 0, 0)
 
@@ -237,8 +255,8 @@ func (window *Window) RefreshTitleBar() {
 	window.titleView.
 		DrawHLine(0, window.titleView.H-titleBorder, window.titleView.W, titleBorder, 0x0) //.
 	//DrawVLine(window.titleView.W/2-titleBorder, 0, window.titleView.H, titleBorder, 0x0)
-	window.titleView.WriteCenteredIn(0, 0, window.titleView.W, window.titleView.H, window.Title, titleColor, titleBarBgColor).
-		Update()
+	window.titleView.WriteCenteredIn(0, 0, window.titleView.W, window.titleView.H, title, titleColor, titleBarBgColor).
+		Update() //Refresh(window.X, window.Y, window.W, window.H)
 
 	window.InnerY += titleBarHeight
 	window.InnerH -= titleBarHeight
@@ -257,7 +275,7 @@ func (window *Window) SetContent(content Content, mx, my int) *Window {
 		window.Title = title
 		window.RefreshTitleBar()
 	}
-	contentViews := content.Init(window.View)
+	contentViews := content.Init(window.View, window.RefreshChannel)
 	window.View.Views = contentViews
 	return window
 }
@@ -283,4 +301,10 @@ func (window *Window) Load() *Window {
 func (window *Window) SetUpdated() *Window {
 	window.updated = true
 	return window
+}
+
+func (window *Window) KeyEvent(event *input.KeyEvent) {
+	if window.content != nil {
+		window.content.KeyEvent(event)
+	}
 }

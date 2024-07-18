@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"nv/display"
 	"nv/display/fonts-go"
+	"nv/input"
 )
 
 type Stats struct {
@@ -41,7 +42,7 @@ var (
 	fields = make([]FieldDefinition, 10)
 )
 
-func (stats *Stats) Init(view *display.View) (views []*display.View) {
+func (stats *Stats) Init(view *display.View, refreshChannel chan bool) (views []*display.View) {
 	stats.view = view.NewView(0, 0, view.InnerW, view.InnerH, 4)
 	stats.view.Fill(0, display.Gray14, display.Black).
 		SetTextArea(&fonts.CourierStd20pt8b, 10, 10).
@@ -49,6 +50,7 @@ func (stats *Stats) Init(view *display.View) (views []*display.View) {
 	return append(views, stats.view)
 }
 
+func (stats *Stats) Close() {}
 func (stats *Stats) Type() string {
 	return "stats"
 }
@@ -101,3 +103,5 @@ func (stats *Stats) Print() {
 	}
 	view.Update()
 }
+
+func (stats *Stats) KeyEvent(event *input.KeyEvent) {}

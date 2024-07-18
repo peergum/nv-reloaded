@@ -37,14 +37,14 @@ func (window *Window) AlertBox(text string, duration time.Duration) {
 		CancelAlertBox()
 	}
 	alertBox = &AlertBox{
-		Window: window.NewCenteredWindow(WindowOptions{
+		Window: window.NewCenteredWindow(600, 300, WindowOptions{
 			TitleBar:     false,
 			Border:       5,
 			BorderColor:  Black,
 			BgColor:      Gray13,
-			Transparency: 0,
+			Transparency: 0.2,
 			Radius:       40,
-			Bpp:          1,
+			Bpp:          4,
 		}),
 	}
 	alertBox.
@@ -54,16 +54,17 @@ func (window *Window) AlertBox(text string, duration time.Duration) {
 
 	if duration > 0 {
 		alertBox.timer = time.AfterFunc(duration, func() {
-			alertBox.ShouldClose = true
+			CancelAlertBox()
+			//alertBox.ShouldClose = true
 		})
 	}
 }
 
-func CheckAlertBox() {
-	if alertBox != nil && alertBox.ShouldClose {
-		CancelAlertBox()
-	}
-}
+//func CheckAlertBox() {
+//	if alertBox != nil && alertBox.ShouldClose {
+//		CancelAlertBox()
+//	}
+//}
 
 func CancelAlertBox() {
 	if alertBox != nil {
