@@ -4,3 +4,9 @@
 [submodule "tinydrm_it8951"]
 	path = tinydrm_it8951
 	url = git@github.com:julbouln/tinydrm_it8951.git
+[submodule "power/pi-sugar"]
+	path = power/pi-sugar
+	url = git@github.com:peergum/pi-sugar.git
+[submodule "it8951"]
+	path = it8951
+	url = git@github.com:peergum/IT8951-go.git
