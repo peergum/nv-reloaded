@@ -21,7 +21,7 @@
 go.work
 
 display/Fonts
-display/fontconvert/ImportedFonts
+#display/fontconvert/ImportedFonts
 display/fontconvert/OtherFonts
 display/fonts-go
 bcm2711

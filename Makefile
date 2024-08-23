@@ -12,7 +12,7 @@ go:
 sync: clean
 	./sync
 
-build: sync install_nv
+build: install_nv
 
 clean:
 	rm -f nv
@@ -44,7 +44,7 @@ test: stop install_nv
 debug: sync nv
 	sudo gdb --args nv $(TEST_ARGS)
 
-fonts: display/fontconvert/fontconvert2go
+fonts: display/fontconvert
 	if [ -f display/fontconvert/fontconvert2go ]; then \
   		rm display/fontconvert/fontconvert2go; \
   	fi

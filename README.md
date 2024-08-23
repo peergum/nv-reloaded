@@ -73,7 +73,7 @@ Using `sudo raspi-config`, ensure the SPI port is ON
 
 ```
 sudo apt update
-sudo apt install git build-essential evtest
+sudo apt install -y git build-essential evtest libfreetype6 libfreetype2-dev libfreetype6-dev
 (possibly more... TBD)
 ```
 
