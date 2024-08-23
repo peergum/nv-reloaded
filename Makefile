@@ -6,10 +6,13 @@ TEST_ARGS = -d -dd -dc -di -dsugar -dio
 #generatedFontList = $(patsubst display/ImportedFonts/%, %, sourceFontList)
 #generatedGoFonts = $(patsubst %.*, %.go, generatedFontList)
 
+go:
+	sh ./install_go
+
 sync: clean
 	./sync
 
-build: sync install
+build: sync install_nv
 
 clean:
 	rm -f nv
@@ -17,14 +20,14 @@ clean:
 nv:
 	go build
 
-install: nv
+install_nv: nv
 	if [ "`hostname`" = "pi4" ]; then \
 		sudo install -m a=rxs -p -o root -g i2c  nv /usr/local/bin/ ;\
 		sudo mkdir -p /var/nv ;\
 		sudo cp nv.service /etc/systemd/system/ ;\
 	fi
 
-start: install
+start: install_nv
 	sudo systemctl daemon-reload
 	sudo systemctl enable nv
 	sudo systemctl restart nv
@@ -32,10 +35,10 @@ start: install
 stop:
 	sudo systemctl stop nv
 
-run: stop install
+run: stop install_nv
 	nv $(NV_ARGS)
 
-test: stop install
+test: stop install_nv
 	nv $(TEST_ARGS)
 
 debug: sync nv

@@ -1,13 +1,9 @@
 github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
 github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
-github.com/peergum/IT8951-go v0.0.5 h1:fk7lflVxlY0e3K1VDk328sLJzjA1q5ZWyz0PV91Rseo=
-github.com/peergum/IT8951-go v0.0.5/go.mod h1:ugr6UM0IouENxgXtJ62N9Xd30F/Ld6q64CRHQ4B0ExE=
+github.com/peergum/IT8951-go v0.0.7 h1:kXkyI1vu2ZsGf7FZ1HYSRsZLTgveGJHevgX2E31Sk2E=
 github.com/peergum/IT8951-go v0.0.7/go.mod h1:4lIMZ3yxe29Jpc2ZItDBIJH8pTVSg5EKwYKkfyV/2uo=
-github.com/peergum/go-rpio/v5 v5.0.1 h1:gjjlkkWg/ijvM2Bouhd//engc6VkTHEoJT2u/d50sP4=
-github.com/peergum/go-rpio/v5 v5.0.1/go.mod h1:5X8yf+GJpCmymfP9Pdqld7LsZ3rf7Ll+xlief8PQ5tg=
+github.com/peergum/go-rpio/v5 v5.0.3 h1:DxFcoRcDkUwjNIRR71VSNVn6sQkY/AoTtDhIIR+VfjA=
 github.com/peergum/go-rpio/v5 v5.0.3/go.mod h1:5X8yf+GJpCmymfP9Pdqld7LsZ3rf7Ll+xlief8PQ5tg=
-github.com/peergum/pi-sugar v0.0.5 h1:UcYO7FcOmqoK/dYf4BAy7r0y9i0cZKD9nqpQZp0rm6U=
-github.com/peergum/pi-sugar v0.0.5/go.mod h1:9h9aRRo8OM7Ypdfi6uCD5sysRX1hKqNjDts7l4a4Ung=
 github.com/peergum/pi-sugar v0.0.6 h1:Ups18jKBaq9bYFaaRfceffIr60wBLxi1GFDlq3SwbTQ=
 github.com/peergum/pi-sugar v0.0.6/go.mod h1:XeV+lLEUe/NFaVKUf2PBiZm0gZH8JWkCpRjtsrQrIzg=
 golang.org/x/sys v0.4.0 h1:Zr2JFtRQNX3BCZ8YtxRE9hNJYC8J6I1MVbMg6owUp18=

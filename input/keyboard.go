@@ -133,7 +133,7 @@ func (keyboard *Keyboard) ReadKeyboard() error {
 	}(file)
 	reader := bufio.NewReader(file)
 	buffer := make([]byte, 24)
-	keyboardReadTicker := time.NewTicker(time.Duration(5) * time.Millisecond)
+	keyboardReadTicker := time.NewTicker(time.Duration(1) * time.Millisecond)
 	defer keyboardReadTicker.Stop()
 	done := false
 	for !done {
@@ -198,6 +198,7 @@ func (keyboard *Keyboard) ReadKeyboard() error {
 			if keymapEnUS[keyEvent.KeyName] != nil {
 				keyEvent.Char = keymapEnUS[keyEvent.KeyName][metakeys]
 			}
+			Debug("%v", keyEvent)
 			keyChannel <- &keyEvent
 		}
 	}

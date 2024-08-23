@@ -77,13 +77,6 @@ sudo apt install git build-essential evtest
 (possibly more... TBD)
 ```
 
-### Installing go 1.22.2 on Pi4 (64 bits)
-
-```
-cd ~
-./install_go
-```
-
 ### Install NV-Reloaded code base
 
 Download the main code base from Github into your home
@@ -93,6 +86,13 @@ cd ~
 git clone https://github.com/peergum/nv-reloaded nv
 cd nv
 make
+```
+
+### Installing go 1.22.2 on Pi4 (64 bits)
+
+```
+cd ~
+./install_go
 ```
 
 ### Run it
