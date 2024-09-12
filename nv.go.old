@@ -22,7 +22,10 @@ import (
 	"flag"
 	"fmt"
 	it8951 "github.com/peergum/IT8951-go"
-	pi_sugar "github.com/peergum/pi-sugar"
+	"github.com/peergum/go-rpio/v5"
+
+	//"github.com/peergum/go-rpio/v5"
+	"github.com/peergum/pi-sugar"
 	"io"
 	"log"
 	"net/http"
@@ -33,10 +36,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"periph.io/x/conn/v3/driver/driverreg"
-	"periph.io/x/host/v3"
-	"periph.io/x/host/v3/orangepi"
-	"periph.io/x/host/v3/rpi"
 	"strconv"
 	"strings"
 	"syscall"
@@ -100,7 +99,8 @@ var (
 
 	//keyboards []*input.Keyboard
 
-	spiDev string
+	spiDev     rpio.SpiDev
+	chipSelect uint8
 )
 
 func init() {
@@ -108,7 +108,8 @@ func init() {
 	flag.BoolVar(&noWelcome, "nw", false, "Skip welcome screen")
 	flag.Float64Var(&vcom, "vcom", defaultVcom, "Display VCOM value (default: -2.13)")
 	flag.IntVar(&orientationCCWDegrees, "rotation", defaultOrientationCCWDegrees, "Orientation in degrees, counterclockwise (0,90,180,270)")
-	flag.StringVar(&spiDev, "spi", "/dev/spidev0.0", "Spi Port")
+	spiDev = rpio.SpiDev(*flag.Int("spi", 0, "Spi Port"))
+	chipSelect = uint8(*flag.Uint("cs", 0, "Chip Select"))
 }
 
 func nv() string {
@@ -154,22 +155,9 @@ func server() {
 func main() {
 	flag.Parse()
 
-	var err error
-	var state *driverreg.State
-	if state, err = host.Init(); err != nil {
-		panic(err)
-	}
+	go_piio.Init()
 
-	Debug("%s", state)
-	if rpi.Present() {
-		Debug("Raspberry Pi detected")
-		spiDev = "/dev/spidev0.0"
-	} else if orangepi.Present() {
-		Debug("Orange Pi detected")
-		spiDev = "/dev/spidev1.0"
-	} else {
-		panic("Platform not recognized")
-	}
+	rpio.Init()
 
 	go server()
 
@@ -195,14 +183,7 @@ func main() {
 		Debug("Wrong vcom value: %f", vcom)
 		return // we're done
 	}
-	if err = display.InitDisplay(uint16(-vcom*1000), it8951.Rotate(orientationCCWDegrees/90), spiDev); err != nil {
-		Debug("Can't init display: %v", err)
-		os.Exit(0)
-	}
-
-	if display.DeviceInfo.PanelH == 0 || display.DeviceInfo.PanelW == 0 {
-		panic("Device info is incorrect")
-	}
+	display.InitDisplay(uint16(-vcom*1000), it8951.Rotate(orientationCCWDegrees/90), spiDev, chipSelect)
 
 	displayUpdatesDone := make(chan bool, 1)
 	go display.ScreenUpdater(displayUpdatesDone) // start background updater

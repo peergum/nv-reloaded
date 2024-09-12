@@ -53,8 +53,10 @@ var (
 	}
 )
 
-func InitDisplay(vcom uint16, rotation it8951.Rotate) {
-	DeviceInfo = it8951.Init(vcom)
+func InitDisplay(vcom uint16, rotation it8951.Rotate, spiDev string) (err error) {
+	if DeviceInfo, err = it8951.Init(vcom, spiDev); err != nil {
+		return err
+	}
 	Rotation = rotation // TODO: implement screen rotations
 	Debug("%v rotation=%d", DeviceInfo.String(), Rotation)
 	VirtualW, VirtualH = int(DeviceInfo.PanelW), int(DeviceInfo.PanelH)
@@ -65,6 +67,7 @@ func InitDisplay(vcom uint16, rotation it8951.Rotate) {
 
 	DeviceInfo.ClearRefresh(uint32(DeviceInfo.MemAddrL)+uint32(DeviceInfo.MemAddrH)<<16, it8951.InitMode, rotation)
 	it8951.WaitForDisplayReady()
+	return nil
 }
 
 func InitScreen() {
